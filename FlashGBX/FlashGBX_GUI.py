@@ -920,6 +920,15 @@ class FlashGBX_GUI(QtWidgets.QWidget):
 					except:
 						pass
 
+				modes = self.CONN.GetSupprtedModes()
+				if len(modes) == 1:
+					if modes[0] == "DMG":
+						self.optDMG.setChecked(True)
+						self.SetMode()
+					elif modes[0] == "AGB":
+						self.optAGB.setChecked(True)
+						self.SetMode()
+
 				return True
 
 			return False
