@@ -31,6 +31,7 @@ class GbxDevice(LK_Device):
 				self.BAUDRATE = max_baud
 				dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1)
 				self.DEVICE = dev
+				if self.DEVICE is not None: self.LoadFirmwareVersion()
 			else:
 				continue
 
@@ -70,8 +71,15 @@ class GbxDevice(LK_Device):
 
 		return conn_msg
 
+	# noinspection PyUnresolvedReferences
 	def LoadFirmwareVersion(self):
 		dprint("Querying firmware version")
+		if self.DEVICE is None: return False
+		if not hasattr(self.DEVICE, "_chromatic_fw_version"):
+			self.DEVICE._chromatic_fw_version = self._query_firmware_version()
+		return self.DEVICE._chromatic_fw_version
+
+	def _query_firmware_version(self):
 		try:
 			self.DEVICE.timeout = 0.075
 			self.DEVICE.reset_input_buffer()
