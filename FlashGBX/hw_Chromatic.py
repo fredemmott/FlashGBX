@@ -7,7 +7,7 @@ from .LK_Device import *
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "Chromatic"
-	DEVICE_LATEST_FW_TS = 1778072716
+	DEVICE_LATEST_FW_TS = 0x6A07ACAC
 	MAX_BUFFER_READ = 0x4000
 
 	def __init__(self):
