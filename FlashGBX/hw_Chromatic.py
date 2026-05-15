@@ -251,15 +251,9 @@ class GbxDevice(LK_Device):
 		return True
 
 	def Close(self, cartPowerOff=False):
-		if self.FW["cfw_id"] == "G":
-			self.DEVICE.close()
-
-		if self.IsConnected():
+		if self.DEVICE is None: return
+		if self.DEVICE.is_open:
 			dprint("Disconnecting from the device")
-			try:
-				self.DEVICE.write(b'KL') # Disable LK firmware
-				self.DEVICE.read(1)
-				self.DEVICE.close()
-			except:
-				self.DEVICE = None
-			self.MODE = None
+			self.DEVICE.close()
+		self.DEVICE = None
+		self.MODE = None
