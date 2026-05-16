@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
+import datetime
 
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
@@ -122,26 +123,34 @@ class GbxDevice(LK_Device):
 			values = struct.unpack(">cHBI", bytearray(info))
 			self.FW = dict(zip(keys, values))
 			self.FW["cfw_id"] = self.FW["cfw_id"].decode('ascii')
+			if self.FW["cfw_id"] != "L": return False
+
 			self.FW["fw_dt"] = datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
 			self.FW["ofw_ver"] = None
-			self.FW["pcb_name"] = None
+			self.FW["pcb_name"] = "GWA5-25A"
+
+			# Doesn't appear to be physically supported
 			self.FW["cart_power_ctrl"] = False
 			self.FW["bootloader_reset"] = False
-			if self.FW["cfw_id"] == "L" and self.FW["fw_ver"] >= 12:
+
+			self.DEVICE_NAME = "Chromatic"
+
+			self.FW["chromatic_info_ver"] = 1 if self.FW["fw_ts"] < 1778072716 else 2
+			# Name was included in the data, but there's no need for that when we can identify
+			# it by a real USB VID and PID
+			if self.FW["chromatic_info_ver"] < 2:
 				size = self._read(1)
-				name = self._read(size)
-				if len(name) > 0:
-					try:
-						self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
-					except:
-						self.FW["pcb_name"] = "Unnamed Device"
-					self.DEVICE_NAME = self.FW["pcb_name"]
+				# Skip:
+				# - the name (size bytes)
+				# - cart_power_ctrl
+				# - bootloader_reset
+				self._read(size + 2)
+				self.FW["chromatic_readable_ver"] = datetime.datetime.fromtimestamp(self.FW["fw_ts"], datetime.UTC).strftime("%Y-%m-%d")
+			else:
+				# BCD-ish 0xYYYY_MM_DD_NN
+				bcd = self._read(5).hex()
+				self.FW["chromatic_readable_ver"] = f"v{bcd[0:4]}-{bcd[4:6]}-{bcd[6:8]}.{bcd[8:10]}"
 
-				# Cartridge Power Control support
-				self.FW["cart_power_ctrl"] = True if self._read(1) == 1 else False
-
-				# Reset to bootloader support
-				self.FW["bootloader_reset"] = True if self._read(1) == 1 else False
 			return True
 
 		except Exception as e:
@@ -186,12 +195,8 @@ class GbxDevice(LK_Device):
 			return False
 
 	def GetFirmwareVersion(self, more=False):
-		s = "{:s}{:d}".format(self.FW["cfw_id"], self.FW["fw_ver"])
-		if self.FW["pcb_name"] == None:
-			s += " <unverified>"
-		if more:
-			s += " ({:s})".format(self.FW["fw_dt"])
-		return s
+		ver = self.FW["chromatic_readable_ver"]
+		return "Unknown" if ver is None else ver
 
 	def GetFullNameLabel(self):
 		if self.FW["pcb_ver"] == -1:
