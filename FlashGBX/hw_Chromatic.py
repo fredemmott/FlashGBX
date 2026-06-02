@@ -6,7 +6,7 @@
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
 
-from typing import Callable, final, ClassVar, cast, Protocol, NamedTuple, Iterable, Collection
+from typing import Callable, final, ClassVar, cast, Protocol, Tuple, Iterable, Collection
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from queue import SimpleQueue
@@ -249,13 +249,6 @@ class GbxDevice(LK_Device):
 		self.DEVICE = None
 		self.MODE = None
 
-class CartRequest(NamedTuple):
-	address: int
-	data: int
-	is_write: bool
-	is_flash: bool
-	wait_for_status: bool
-
 # TODO: var_keys class?
 def make_var_key(size, key) -> int:
 	return (size << 8) | (key & 0xFF)
@@ -287,7 +280,12 @@ class ChromaticMicrocodeInterface(Protocol):
 		raise NotImplementedError()
 
 	@abstractmethod
-	def mc_enqueue(self, reqs: Collection[CartRequest]):
+	def mc_enqueue(
+			self,
+			reqs: Collection[Tuple[int, int]],
+			is_write: bool = False,
+			is_flash: bool = False,
+			wait_for_status: bool = False) -> None:
 		raise NotImplementedError()
 
 	@abstractmethod
@@ -296,7 +294,12 @@ class ChromaticMicrocodeInterface(Protocol):
 
 	# enqueue + poll helper
 	@abstractmethod
-	def mc_exec(self, reqs: Collection[CartRequest]) -> bytes:
+	def mc_exec(
+			self,
+			reqs: Collection[Tuple[int, int]],
+			is_write: bool = False,
+			is_flash: bool = False,
+			wait_for_status: bool = False) -> bytes:
 		raise NotImplementedError()
 
 	@abstractmethod
@@ -452,7 +455,12 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 			self._lk_response_deque.extend(data)
 			self._lk_response_condition.notify()
 
-	def mc_enqueue(self, reqs: Collection[CartRequest]):
+	def mc_enqueue(
+			self,
+			reqs: Collection[Tuple[int, int]],
+			is_write: bool = False,
+			is_flash: bool = False,
+			wait_for_status: bool = False) -> None:
 		buffer = struct.pack("BB", 0x02, len(reqs))
 		# Verilog:
 		#
@@ -471,12 +479,12 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		buffer += b"".join(
 			struct.pack(
 			">HBB",
-			req.address,
-				req.data,
-				req.is_write << 0
-				| req.is_flash << 1
-				| req.wait_for_status << 2)
-			for req in reqs
+			address,
+				data,
+				is_write << 0
+				| is_flash << 1
+				| wait_for_status << 2)
+			for (address, data) in reqs
 		)
 		self.usb_write(buffer)
 		self.mc_wait_for_ack()
@@ -510,8 +518,13 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		ret = self.usb_read(count)
 		return ret
 
-	def mc_exec(self, reqs: Collection[CartRequest]) -> bytes:
-		self.mc_enqueue(reqs)
+	def mc_exec(
+			self,
+			reqs: Collection[Tuple[int, int]],
+			is_write: bool = False,
+			is_flash: bool = False,
+			wait_for_status: bool = False) -> bytes:
+		self.mc_enqueue(reqs, is_write, is_flash, wait_for_status)
 		ret = self.mc_poll(len(reqs))
 		return ret
 
@@ -683,18 +696,7 @@ class ChromaticCmdDmgMbcReset(ChromaticMicrocodeCommand):
 			(0x4000, 0x00), # RAM_BANK_SEL
 			(0x6000, 0x00), # BANK_MODE_SEL
 		]
-		commands = [
-			CartRequest(
-				address=command[0],
-				data=command[1],
-				is_write=True,
-				is_flash=False,
-				wait_for_status=False,
-			)
-			for command in commands
-		]
-		self._io.mc_enqueue(commands)
-		self._io.mc_poll(len(commands))
+		self._io.mc_exec(commands, is_write=True)
 		self._io.lk_response(b"\x01")
 
 	def from_lk(self, data: bytes):
@@ -734,14 +736,8 @@ class ChromaticCmdDmgCartRead(ChromaticMicrocodeCommand):
 				self._io.lk_response(data)
 				pending -= len(data)
 
-			req = CartRequest(
-				address=addr,
-				data=0,
-				is_write=False,
-				is_flash=False,
-				wait_for_status=False,
-			)
-			chunk.append(req)
+			chunk.append((addr, 0))
+
 			if len(chunk) == 0xFF:
 				self._io.mc_enqueue(chunk)
 				chunk = list()
@@ -777,13 +773,7 @@ class ChromaticCmdDmgCartWrite(ChromaticMicrocodeCommand):
 			return
 		addr = struct.unpack(">I", self._rx[0:4])[0]
 		value = self._rx[4]
-		self._io.mc_exec([CartRequest(
-			address=addr,
-			data=value,
-			is_write=True,
-			is_flash=False,
-			wait_for_status=False,
-		)])
+		self._io.mc_exec([(addr, value)], is_write=True)
 		self._io.lk_response(b"\x01")
 		self._is_complete = True
 
