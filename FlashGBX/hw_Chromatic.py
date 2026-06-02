@@ -264,6 +264,7 @@ def lookup_var_key(name: str) -> int:
 
 VAR_IDX_ADDRESS = lookup_var_key("ADDRESS")
 VAR_IDX_TRANSFER_SIZE = lookup_var_key("TRANSFER_SIZE")
+VAR_IDX_FLASH_WE_PIN = lookup_var_key("FLASH_WE_PIN")
 # make_var_key() can not return > 16-bit values
 VAR_IDX_HOLD_PIN_AUDIO = 0x10000
 
@@ -540,7 +541,7 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		#         dmg_read_cs_pulse: rx_data_r[3],
 		#         dmg_write_cs_pulse: rx_data_r[4]
 		#     };
-		value = self._vars.get(lookup_var_key("FLASH_WE_PIN"), 0) & 0b11
+		value = self._vars.get(VAR_IDX_FLASH_WE_PIN, 0) & 0b11
 		value = value | (self._vars.get(VAR_IDX_HOLD_PIN_AUDIO, 0) << 2)
 		value = value | (self._vars.get(lookup_var_key("DMG_READ_CS_PULSE"), 0) << 3)
 		value = value | (self._vars.get(lookup_var_key("DMG_WRITE_CS_PULSE"), 0) << 4)
@@ -574,7 +575,7 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 				pending -= 0xFF
 			# pre-allocate to avoid a bunch of copies
 			count = len(chunk)
-			buffer = bytearray(2 + count)
+			buffer = bytearray(2 + (4 * count))
 			buffer[0] = 0x02 # TODO: named constant for command IDS
 			buffer[1] = count
 			begin = 2
@@ -884,10 +885,58 @@ class ChromaticCmdSetFlashCmd(ChromaticMicrocodeCommand):
 			return
 		self._state.flash_program_we_pin = self._rx[2]
 		commands = memoryview(self._rx)[3:]
-		self._state.flash_commands = [
-			(address, data)
-			for (address, data) in struct.iter_unpack(">IH", commands)
-		]
+
+		self._state.flash_commands.clear()
+		for (address, data) in struct.iter_unpack(">IH", commands):
+			if address == 0 and data == 0:
+				break
+			self._state.flash_commands.append((address, data))
+		self._is_complete = True
+		self._io.lk_response(b"\x01")
+
+class ChromaticCmdFlashProgram(ChromaticMicrocodeCommand):
+	command = "FLASH_PROGRAM"
+
+	def __init__(
+			self,
+			fw_vars: dict[int, int],
+			state: ChromaticMicrocodeState,
+			output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
+		self._is_complete = False
+
+		self._address = self._fw_vars[VAR_IDX_ADDRESS]
+		self._end = self._address + self._fw_vars[VAR_IDX_TRANSFER_SIZE]
+
+		self._next_vars = self._fw_vars.copy()
+		self._next_vars[VAR_IDX_ADDRESS] = self._end
+		self._fw_vars[VAR_IDX_FLASH_WE_PIN] = self._state.flash_program_we_pin
+		self._io.mc_set_variables(self._fw_vars)
+
+	@property
+	def is_complete(self) -> bool:
+		return self._is_complete
+
+	def from_lk(self, rx_packet: bytes):
+		for byte in rx_packet:
+			self._io.mc_enqueue(
+				self._state.flash_commands,
+				is_write=True,
+				is_flash=True,
+				flush=False
+			)
+			self._io.mc_enqueue(
+				[(self._address, byte)],
+				is_write=True,
+				is_flash=True,
+				wait_for_status=True,
+				flush=False
+			)
+			self._address += 1
+		if self._address < self._end:
+			return
+		self._io.mc_exec_enqueued()
+		self._io.mc_set_variables(self._next_vars)
 		self._is_complete = True
 		self._io.lk_response(b"\x01")
 
