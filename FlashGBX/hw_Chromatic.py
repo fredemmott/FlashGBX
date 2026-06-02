@@ -329,11 +329,7 @@ class ChromaticMicrocodeCommand(ABC):
 	@classmethod
 	@final
 	def opcode(cls) -> int:
-		if cls._opcode is None:
-			opcode = cls._opcode = LK_Device.DEVICE_CMD[cls.command]
-			cls._opcode = opcode
-			return opcode
-		return cls._opcode
+		return LK_Device.DEVICE_CMD[cls.command]
 
 	@abstractmethod
 	def from_lk(self, data: bytes):
@@ -755,6 +751,7 @@ class ChromaticCmdDmgCartRead(ChromaticMicrocodeCommand):
 
 class ChromaticCmdDmgCartWrite(ChromaticMicrocodeCommand):
 	command = "DMG_CART_WRITE"
+	is_flash = False
 
 	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
 		super().__init__(fw_vars, output)
@@ -773,9 +770,49 @@ class ChromaticCmdDmgCartWrite(ChromaticMicrocodeCommand):
 			return
 		addr = struct.unpack(">I", self._rx[0:4])[0]
 		value = self._rx[4]
-		self._io.mc_exec([(addr, value)], is_write=True)
+		self._io.mc_exec([(addr, value)], is_write=True, is_flash=self.is_flash)
 		self._io.lk_response(b"\x01")
 		self._is_complete = True
+
+class ChromaticCmdDmgFlashWriteByte(ChromaticCmdDmgCartWrite):
+	command = "DMG_FLASH_WRITE_BYTE"
+	is_flash = True
+
+class ChromaticCmdCartWriteFlashCmd(ChromaticMicrocodeCommand):
+	command = "CART_WRITE_FLASH_CMD"
+
+	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, output)
+		self._is_complete = False
+		self._rx = bytearray()
+
+	@property
+	def is_complete(self) -> bool:
+		return self._is_complete
+
+	def from_lk(self, rx_data: bytes):
+		# byte 0: 'is flashcart' (unused)
+ 		#      1: number of commands
+        #      ...: commands
+        #
+        # command bytes [0..3]: address
+        #               [4..5]: data (command)
+		self._rx.extend(rx_data)
+		if len(self._rx) < 2:
+			return
+		count = self._rx[1]
+		if count == 0:
+			return
+		if len(self._rx) - 2 < (count * 6):
+			return
+		payload = memoryview(self._rx)[2:]
+		commands = [
+			(address, data)
+			for (address, data) in struct.iter_unpack(">IH", payload)
+		]
+		self._io.mc_exec(commands, is_write=True, is_flash=True)
+		self._is_complete = True
+		self._io.lk_response(b"\x01")
 
 class ChromaticCmdStub(ChromaticMicrocodeCommand, ABC):
 	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
