@@ -468,14 +468,16 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		#         req_o.is_flash <= rx_data_r[1];
 		#         req_o.wait_for_status <= rx_data_r[2];
 		#     end
-		for req in reqs:
-			buffer += struct.pack(
-				">HBB",
-				req.address,
+		buffer += b"".join(
+			struct.pack(
+			">HBB",
+			req.address,
 				req.data,
 				req.is_write << 0
 				| req.is_flash << 1
 				| req.wait_for_status << 2)
+			for req in reqs
+		)
 		self.usb_write(buffer)
 		self.mc_wait_for_ack()
 
