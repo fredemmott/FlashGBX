@@ -2,6 +2,7 @@
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 # Author: Fred Emmott
+from itertools import batched
 
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
@@ -261,10 +262,15 @@ def lookup_var_key(name: str) -> int:
 		case _: raise ValueError(f"Invalid variable size: {size}")
 	return make_var_key(size, key)
 
-# make_var_key() can not return > 16-bit values
-VAR_IDX_HOLD_PIN_AUDIO = 0x10000
 VAR_IDX_ADDRESS = lookup_var_key("ADDRESS")
 VAR_IDX_TRANSFER_SIZE = lookup_var_key("TRANSFER_SIZE")
+# make_var_key() can not return > 16-bit values
+VAR_IDX_HOLD_PIN_AUDIO = 0x10000
+
+class ChromaticMicrocodeState:
+	def __init__(self):
+		self.flash_commands : list[Tuple[int, int]] = []
+		self.flash_program_we_pin: int = 0 # overrides variable
 
 class ChromaticMicrocodeInterface(Protocol):
 	@abstractmethod
@@ -279,13 +285,24 @@ class ChromaticMicrocodeInterface(Protocol):
 	def mc_set_variables(self, fw_vars: dict[int, int]):
 		raise NotImplementedError()
 
+
+	# Add cart requests to the queue
+	#
+	# `flush` supports up to 255 commands; for more than 255, use `mc_exec_enqueued`
 	@abstractmethod
 	def mc_enqueue(
 			self,
 			reqs: Collection[Tuple[int, int]],
+			flush: bool = True,
 			is_write: bool = False,
 			is_flash: bool = False,
 			wait_for_status: bool = False) -> None:
+		raise NotImplementedError()
+
+	# Flush an arbitrary number of requests, pipelining as appropriate, and returning
+	# the corresponding data
+	@abstractmethod
+	def mc_exec_enqueued(self) -> bytes:
 		raise NotImplementedError()
 
 	@abstractmethod
@@ -316,8 +333,10 @@ class ChromaticMicrocodeCommand(ABC):
 	def __init__(
 			self,
 			fw_vars: dict[int, int],
+			state: ChromaticMicrocodeState,
 			output: ChromaticMicrocodeInterface):
 		self._fw_vars = fw_vars
+		self._state = state
 		self._io = output
 
 
@@ -357,7 +376,10 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 	_lk_response_deque: deque[int|NotImplementedError]
 	_lk_response_condition: threading.Condition
 
+	_cart_queue : list[bytes]
+
 	_vars: dict[int, int]
+	_state: ChromaticMicrocodeState
 
 	_commands: dict[int, type[ChromaticMicrocodeCommand]]
 
@@ -383,7 +405,10 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		self._lk_response_deque = deque()
 		self._lk_response_condition = threading.Condition()
 
+		self._cart_queue = list()
+
 		self._vars = {}
+		self._state = ChromaticMicrocodeState()
 
 		self._commands = {}
 		for klass in self._all_commands(ChromaticMicrocodeCommand):
@@ -454,10 +479,10 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 	def mc_enqueue(
 			self,
 			reqs: Collection[Tuple[int, int]],
+			flush: bool = True,
 			is_write: bool = False,
 			is_flash: bool = False,
 			wait_for_status: bool = False) -> None:
-		buffer = struct.pack("BB", 0x02, len(reqs))
 		# Verilog:
 		#
 		#     ENQUEUE_RX_BYTE_0: begin
@@ -472,7 +497,7 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		#         req_o.is_flash <= rx_data_r[1];
 		#         req_o.wait_for_status <= rx_data_r[2];
 		#     end
-		buffer += b"".join(
+		self._cart_queue.extend(
 			struct.pack(
 			">HBB",
 			address,
@@ -482,8 +507,24 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 				| wait_for_status << 2)
 			for (address, data) in reqs
 		)
-		self.usb_write(buffer)
-		self.mc_wait_for_ack()
+
+		if flush:
+			if len(self._cart_queue) > 0xFF:
+				raise ValueError("Cannot enqueue more than 255 requests")
+			# Pre-allocate to avoid a bunch of copies
+			buffer = bytearray(2 + (4 * len(self._cart_queue)))
+
+			buffer[0] = 0x02 # TODO: named constant
+			buffer[1] = len(self._cart_queue)
+			begin = 2
+			for command in self._cart_queue:
+				end = begin + 4
+				buffer[begin:end] = command
+				begin = end
+			self._cart_queue.clear()
+
+			self.usb_write(buffer)
+			self.mc_wait_for_ack()
 
 	def mc_disable_cart(self):
 		self.usb_write(b"\x00")
@@ -520,9 +561,36 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 			is_write: bool = False,
 			is_flash: bool = False,
 			wait_for_status: bool = False) -> bytes:
-		self.mc_enqueue(reqs, is_write, is_flash, wait_for_status)
-		ret = self.mc_poll(len(reqs))
+		self.mc_enqueue(reqs, flush=False, is_write=is_write, is_flash=is_flash, wait_for_status=wait_for_status)
+		ret = self.mc_exec_enqueued()
 		return ret
+
+	def mc_exec_enqueued(self) -> bytes:
+		pending = 0
+		ret = list()
+		for chunk in batched(self._cart_queue, 0xFF):
+			if pending > 0xFF:
+				ret.extend(self.mc_poll(0xFF))
+				pending -= 0xFF
+			# pre-allocate to avoid a bunch of copies
+			count = len(chunk)
+			buffer = bytearray(2 + count)
+			buffer[0] = 0x02 # TODO: named constant for command IDS
+			buffer[1] = count
+			begin = 2
+			for command in chunk:
+				end = begin + 4
+				buffer[begin:end] = command
+				begin = end
+			self.usb_write(buffer)
+			self.mc_wait_for_ack()
+			pending += count
+		self._cart_queue.clear()
+		while pending > 0:
+			count = min(pending, 0xFF)
+			ret.extend(self.mc_poll(count))
+			pending -= count
+		return bytearray(ret)
 
 	def mc_ping(self) -> None:
 		self.usb_write(b"\x04")
@@ -548,7 +616,7 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 
 			if buf[0] in self._commands:
 				klass = self._commands[buf[0]]
-				self._command = klass(self._vars.copy(), self)
+				self._command = klass(self._vars.copy(), self._state, self)
 			else:
 				keys = [k for k, v in LK_Device.DEVICE_CMD.items() if v == buf[0]]
 				if len(keys) == 1:
@@ -564,8 +632,8 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 class ChromaticCmdGetVariable(ChromaticMicrocodeCommand):
 	command = "GET_VARIABLE"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._is_complete = False
 		self._rx = bytearray()
 
@@ -588,8 +656,8 @@ class ChromaticCmdGetVariable(ChromaticMicrocodeCommand):
 class ChromaticCmdSetVariable(ChromaticMicrocodeCommand):
 	command = "SET_VARIABLE"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._is_complete = False
 		self._rx = bytearray()
 
@@ -614,8 +682,8 @@ class ChromaticCmdSetVariable(ChromaticMicrocodeCommand):
 class ChromaticCmdSetPin(ChromaticMicrocodeCommand):
 	command = "SET_PIN"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._is_complete = False
 		self._rx = bytearray()
 
@@ -640,8 +708,8 @@ class ChromaticCmdSetPin(ChromaticMicrocodeCommand):
 class ChromaticCmdSetAddrAsInputs(ChromaticMicrocodeCommand):
 	command = "SET_ADDR_AS_INPUTS"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._io.mc_disable_cart()
 		self._io.lk_response(b"\x01")
 
@@ -656,8 +724,8 @@ class ChromaticCmdSetAddrAsInputs(ChromaticMicrocodeCommand):
 class ChromaticCmdDmgMbcReset(ChromaticMicrocodeCommand):
 	command = "DMG_MBC_RESET"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		# This sequence should reset an MBC1, MBC3, or MBC5, using the same sequence of commands
 		# for all of them; in some cases they have slightly different but useful behaviors, on others,
 		# they're ignored
@@ -705,8 +773,8 @@ class ChromaticCmdDmgMbcReset(ChromaticMicrocodeCommand):
 class ChromaticCmdDmgCartRead(ChromaticMicrocodeCommand):
 	command = "DMG_CART_READ"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._is_complete = False
 		self._main()
 
@@ -724,37 +792,16 @@ class ChromaticCmdDmgCartRead(ChromaticMicrocodeCommand):
 		self._fw_vars[VAR_IDX_ADDRESS] = end
 		self._io.mc_set_variables(self._fw_vars)
 
-		pending = 0
-		chunk = list()
-		for addr in range(begin, end):
-			if pending == 512:
-				data = self._io.mc_poll(0xFF)
-				self._io.lk_response(data)
-				pending -= len(data)
-
-			chunk.append((addr, 0))
-
-			if len(chunk) == 0xFF:
-				self._io.mc_enqueue(chunk)
-				chunk = list()
-			pending += 1
-
-		if chunk:
-			self._io.mc_enqueue(chunk)
-
-		while pending > 0:
-			data = self._io.mc_poll(min(pending, 0xFF))
-			pending -= len(data)
-			self._io.lk_response(data)
-
+		ret = self._io.mc_exec([(address, 0) for address in range(begin, end)])
 		self._is_complete = True
+		self._io.lk_response(ret)
 
 class ChromaticCmdDmgCartWrite(ChromaticMicrocodeCommand):
 	command = "DMG_CART_WRITE"
 	is_flash = False
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._is_complete = False
 		self._rx = bytearray()
 
@@ -781,8 +828,8 @@ class ChromaticCmdDmgFlashWriteByte(ChromaticCmdDmgCartWrite):
 class ChromaticCmdCartWriteFlashCmd(ChromaticMicrocodeCommand):
 	command = "CART_WRITE_FLASH_CMD"
 
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		self._is_complete = False
 		self._rx = bytearray()
 
@@ -814,9 +861,98 @@ class ChromaticCmdCartWriteFlashCmd(ChromaticMicrocodeCommand):
 		self._is_complete = True
 		self._io.lk_response(b"\x01")
 
+class ChromaticCmdSetFlashCmd(ChromaticMicrocodeCommand):
+	command = "SET_FLASH_CMD"
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
+		self._is_complete = False
+		self._rx = bytearray()
+
+	@property
+	def is_complete(self) -> bool:
+		return self._is_complete
+
+	def from_lk(self, rx_packet: bytes):
+		# byte [0] command set (unused, AMD only for now)
+		#      [1] flash method (unused, single byte only for now)
+		#      [2] FLASH_WE_PIN override
+		#      [...] commands x 6 (fixed count)
+		# command [0..3] address
+		#         [4..5] data
+		self._rx.extend(rx_packet)
+		if len(self._rx) < 3 + (6 * 6):
+			return
+		self._state.flash_program_we_pin = self._rx[2]
+		commands = memoryview(self._rx)[3:]
+		self._state.flash_commands = [
+			(address, data)
+			for (address, data) in struct.iter_unpack(">IH", commands)
+		]
+		self._is_complete = True
+		self._io.lk_response(b"\x01")
+
+class ChromaticCmdCalcCrc32(ChromaticMicrocodeCommand):
+	command = "CALC_CRC32"
+
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
+		self._rx = bytearray()
+		self._is_complete = False
+
+	@property
+	def is_complete(self) -> bool:
+		return self._is_complete
+
+	def from_lk(self, rx_packet: bytes):
+		self._rx.extend(rx_packet)
+		if len(self._rx) < 4:
+			return
+		count = struct.unpack(">I", self._rx[0:4])[0]
+		begin = self._fw_vars[VAR_IDX_ADDRESS]
+		end = begin + count
+
+		reqs = [
+			(address, 0)
+			for address in range(begin, end)
+		]
+		data = self._io.mc_exec(reqs)
+		crc = zlib.crc32(data)
+
+		self._io.lk_response(struct.pack(">I", crc))
+		self._is_complete = True
+
+class ChromaticCmdDmgSetBankChangeCmd(ChromaticMicrocodeCommand):
+	command = "DMG_SET_BANK_CHANGE_CMD"
+
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
+		self._rx = bytearray()
+		self._is_complete = False
+
+	@property
+	def is_complete(self) -> bool:
+		return self._is_complete
+
+	def from_lk(self, rx_packet: bytes):
+		# byte [0] count
+		#      [...] commands
+		# command [0..3] address
+		# command [4..7] data
+		self._rx.extend(rx_packet)
+		if len(self._rx) < 1:
+			return
+		count = self._rx[0]
+
+		if len(self._rx) < (count * 8) + 1:
+			return
+
+		# Not yet implemented, a stub is fine for some cartridges
+		self._is_complete = True
+		self._io.lk_response(b"\x01")
+
 class ChromaticCmdStub(ChromaticMicrocodeCommand, ABC):
-	def __init__(self, fw_vars: dict[int, int], output: ChromaticMicrocodeInterface):
-		super().__init__(fw_vars, output)
+	def __init__(self, fw_vars: dict[int, int], state: ChromaticMicrocodeState, output: ChromaticMicrocodeInterface):
+		super().__init__(fw_vars, state, output)
 		output.lk_response(b"\x01")
 
 	@property
