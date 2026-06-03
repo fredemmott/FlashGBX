@@ -462,6 +462,8 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 
 	def usb_write(self, data) -> int | None:
 		count = super().write(data)
+		assert(count is not None)
+		assert(count == len(data))
 		return count
 	def usb_read(self, size) -> bytes:
 		return super().read(size)
