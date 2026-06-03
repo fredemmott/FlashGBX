@@ -557,6 +557,8 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		command = struct.pack("BB", 0x03, count)
 		self.usb_write(command)
 		ret = self.usb_read(count)
+		if len(ret) != count:
+			raise Exception(f"Expected {count} bytes, got {len(ret)} bytes")
 		return ret
 
 	def mc_exec(
