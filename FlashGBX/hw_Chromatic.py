@@ -571,6 +571,12 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		ret = self.mc_exec_enqueued()
 		return ret
 
+	# Returns (enqueued count, polled count)
+	def mc_debug(self) -> (int, int):
+		self.usb_write(b'\x05')
+		return struct.unpack(">HH", self.usb_read(4))
+
+
 	def mc_exec_enqueued(self) -> bytes:
 		pending = 0
 		ret = list()
