@@ -460,8 +460,9 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		with self._lk_response_condition:
 			return len(self._lk_response_deque)
 
-	def usb_write(self, data):
-		super().write(data)
+	def usb_write(self, data) -> int | None:
+		count = super().write(data)
+		return count
 	def usb_read(self, size) -> bytes:
 		return super().read(size)
 	def usb_read_byte(self):
