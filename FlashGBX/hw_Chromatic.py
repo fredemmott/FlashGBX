@@ -102,7 +102,26 @@ class GbxDevice(LK_Device):
 				self.FW = None
 				return False
 
-			if device_id != b"Micro2026060101":
+			if len(device_id) != 12:
+				dprint("Running microcode firmware, but not a supported version")
+				self.FW = None
+				return False
+
+			# BCD
+			year = device_id[5:7].hex()
+			month = device_id[7:8].hex()
+			day = device_id[8:9].hex()
+
+			revision = device_id[9]
+
+			upstream_major = device_id[10]
+			upstream_minor = device_id[11]
+
+			self.FW["fw_dt"] = f"{year}-{month}-{day}"
+			self.FW["fw_ver/ChromaticDumper"] = f"{year}.{month}.{day}.{revision}"
+			self.FW["fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
+
+			if self.FW["fw_ver/ChromaticDumper"] != "2026.06.03.1":
 				dprint("Running microcode firmware, but not a supported version")
 				self.FW = None
 				return False
@@ -189,7 +208,7 @@ class GbxDevice(LK_Device):
 			return False
 
 	def GetFirmwareVersion(self, more=False):
-		return self._firmware_version
+		return f"v{self.FW["fw_ver/ChromaticDumper"]} (based on v{self.FW['fw_ver/Upstream']})"
 
 	def GetFullNameExtended(self, more=False):
 		return "{:s} – Firmware {:s} ({:s})".format(self.GetFullName(), self.GetFirmwareVersion(), self.GetPort())
@@ -1046,3 +1065,7 @@ class ChromaticCmdSetModeDmg(ChromaticCmdStub):	command = "SET_MODE_DMG"
 class ChromaticCmdSetVoltage3Pt3V(ChromaticCmdStub): command = "SET_VOLTAGE_3_3V"
 class ChromaticCmdSetVoltage5V(ChromaticCmdStub): command = "SET_VOLTAGE_5V"
 class ChromaticCmdDisablePullups(ChromaticCmdStub):	command = "DISABLE_PULLUPS"
+
+def bcd_to_int(bcd):
+	return (bcd >> 4) * 10 + (bcd & 0xF)
+
