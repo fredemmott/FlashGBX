@@ -194,6 +194,10 @@ class GbxDevice(LK_Device):
 	def GetFullNameExtended(self, more=False):
 		return "{:s} – Firmware {:s} ({:s})".format(self.GetFullName(), self.GetFirmwareVersion(), self.GetPort())
 
+	def GetFullName(self):
+		# Superclass behavior includes PCB version, which isn't applicable here
+		return self.GetName()
+
 	def CanSetVoltageManually(self):
 		return False
 
