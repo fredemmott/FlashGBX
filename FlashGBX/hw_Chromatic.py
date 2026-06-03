@@ -377,7 +377,7 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 	_lk_response_deque: deque[int|NotImplementedError]
 	_lk_response_condition: threading.Condition
 
-	_cart_queue : list[bytes]
+	_cart_queue : bytearray
 
 	_vars: dict[int, int]
 	_state: ChromaticMicrocodeState
@@ -406,7 +406,7 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		self._lk_response_deque = deque()
 		self._lk_response_condition = threading.Condition()
 
-		self._cart_queue = list()
+		self._cart_queue = bytearray()
 
 		self._vars = {}
 		self._state = ChromaticMicrocodeState()
@@ -501,30 +501,17 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 		#         req_o.is_flash <= rx_data_r[1];
 		#         req_o.wait_for_status <= rx_data_r[2];
 		#     end
-		self._cart_queue.extend(
-			struct.pack(
-			">HBB",
-			address,
-				data,
-				is_write << 0
-				| is_flash << 1
-				| wait_for_status << 2)
-			for (address, data) in reqs
-		)
+		flags = (is_write << 0) | (is_flash << 1) | (wait_for_status << 2)
+		layout = struct.Struct(">HBB")
+		for address, data in reqs:
+			self._cart_queue.extend(struct.pack(">HBB", address, data, flags))
 
 		if flush:
-			if len(self._cart_queue) > 0xFF:
+			count = len(self._cart_queue) // 4
+			if count > 0xFF:
 				raise ValueError("Cannot enqueue more than 255 requests")
-			# Pre-allocate to avoid a bunch of copies
-			buffer = bytearray(2 + (4 * len(self._cart_queue)))
-
-			buffer[0] = 0x02 # TODO: named constant
-			buffer[1] = len(self._cart_queue)
-			begin = 2
-			for command in self._cart_queue:
-				end = begin + 4
-				buffer[begin:end] = command
-				begin = end
+			buffer = bytearray([0x02, count])
+			buffer.extend(self._cart_queue)
 			self._cart_queue.clear()
 
 			self.usb_write(buffer)
@@ -579,30 +566,32 @@ class ChromaticMicrocodeDevice(serial.Serial, ChromaticMicrocodeInterface):
 
 	def mc_exec_enqueued(self) -> bytes:
 		pending = 0
-		ret = list()
-		for chunk in batched(self._cart_queue, 0xFF):
-			if pending > 0xFF:
-				ret.extend(self.mc_poll(0xFF))
-				pending -= 0xFF
-			# pre-allocate to avoid a bunch of copies
-			count = len(chunk)
-			buffer = bytearray(2 + (4 * count))
-			buffer[0] = 0x02 # TODO: named constant for command IDS
-			buffer[1] = count
-			begin = 2
-			for command in chunk:
-				end = begin + 4
-				buffer[begin:end] = command
-				begin = end
+		ret = bytearray()
+		max_chunk_commands = 0xFF
+		bytes_per_command = 4
+		max_chunk_bytes = max_chunk_commands * bytes_per_command
+		total = 0
+		for chunk in batched(self._cart_queue, max_chunk_bytes):
+			assert(len(chunk) % bytes_per_command == 0)
+			count = len(chunk) // bytes_per_command
+			# Device FIFO has 512 items so we can do have two chunks in-flight
+			if pending > max_chunk_commands:
+				ret.extend(self.mc_poll(max_chunk_commands))
+				pending -= max_chunk_commands
+
+			buffer = bytearray([0x02, count])
+			buffer.extend(chunk)
+
 			self.usb_write(buffer)
 			self.mc_wait_for_ack()
 			pending += count
+			total += count
 		self._cart_queue.clear()
 		while pending > 0:
 			count = min(pending, 0xFF)
 			ret.extend(self.mc_poll(count))
 			pending -= count
-		return bytearray(ret)
+		return ret
 
 	def mc_ping(self) -> None:
 		self.usb_write(b"\x04")
