@@ -9,7 +9,7 @@
 		[ 0xBF, 0xC9 ]
 	],
 	"flash_size":0x200000,
-	"voltage":3.3,
+	"voltage":5,
 	"start_addr":0,
 	"first_bank":1,
 	"write_pin":"WR",
