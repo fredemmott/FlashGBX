@@ -891,7 +891,7 @@
   "rg": "Japan"
  },
  "ee93c2837da431d6580ba825b904bfcf57c942b8": {
-  "gn": "Megaman - Battle Network 3 - Blue Version",
+  "gn": "Mega Man - Battle Network 3 - Blue Version",
   "ne": "(USA)",
   "gc": "A3XE",
   "rc": 3234300153,
@@ -1644,7 +1644,7 @@
   "rg": "France"
  },
  "602a74a2732538f348f6e72dc6d1c4af9c9977eb": {
-  "gn": "Megaman Zero 2",
+  "gn": "Mega Man Zero 2",
   "ne": "(USA)",
   "gc": "A62E",
   "rc": 3458086843,
@@ -1711,7 +1711,7 @@
   "rg": "Japan"
  },
  "e6a04dc7d1a77ffd66180eb20a0b3ffa9bbe7d3d": {
-  "gn": "Megaman - Battle Network 3 - White Version",
+  "gn": "Mega Man - Battle Network 3 - White Version",
   "ne": "(USA)",
   "gc": "A6BE",
   "rc": 199508234,
@@ -1811,7 +1811,7 @@
   "rg": "Japan"
  },
  "a855e8ddb1bf2179282a38707c86e1a330dee6b2": {
-  "gn": "Megaman & Bass",
+  "gn": "Mega Man & Bass",
   "ne": "(USA)",
   "gc": "A6ME",
   "rc": 4003892270,
@@ -1822,7 +1822,7 @@
   "rg": "USA"
  },
  "5a040c632973596c1419c30a2bbba352254b12b6": {
-  "gn": "Megaman & Bass",
+  "gn": "Mega Man & Bass",
   "ne": "(Europe)",
   "gc": "A6MP",
   "rc": 28629342,
@@ -2164,7 +2164,7 @@
   "rg": "Europe"
  },
  "04021c262c81983cd3642128525105b202f25534": {
-  "gn": "Megaman - Battle Chip Challenge",
+  "gn": "Mega Man - Battle Chip Challenge",
   "ne": "(USA)",
   "gc": "A89E",
   "rc": 650003709,
@@ -4976,7 +4976,7 @@
   "rg": "USA"
  },
  "427621b8b2363ccdb1861477a09804490aed103b": {
-  "gn": "Megaman - Battle Network 2",
+  "gn": "Mega Man - Battle Network 2",
   "ne": "(USA)",
   "gc": "AE2E",
   "rc": 1838555010,
@@ -11588,7 +11588,7 @@
   "rg": "USA, Europe"
  },
  "ba613894f09511eb686b6b4e194b6c4b0b937543": {
-  "gn": "Megaman - Battle Network",
+  "gn": "Mega Man - Battle Network",
   "ne": "(USA)",
   "gc": "AREE",
   "rc": 489978225,
@@ -15396,6 +15396,17 @@
   "lg": "Ja",
   "rg": "Japan"
  },
+ "3a8c3836664d2c2b7f5f05ae89b399c067e0c693": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 5 Expert 1 - Taikenban",
+  "ne": "(Japan)",
+  "gc": "AYTJ",
+  "rc": 2375279917,
+  "rs": 4194304,
+  "st": 0,
+  "ss": 0,
+  "lg": "Ja",
+  "rg": "Japan"
+ },
  "6565fe1055fe9c8f7410848019594c9bbddca3a1": {
   "gn": "Yu-Gi-Oh! - Worldwide Edition - Stairway to the Destined Duel",
   "ne": "(USA) (En,Ja,Fr,De,Es,It)",
@@ -15576,7 +15587,7 @@
   "rg": "Japan"
  },
  "a3dba688482a12b4d9079a3e46d781ea869ab968": {
-  "gn": "Megaman Zero",
+  "gn": "Mega Man Zero",
   "ne": "(USA, Europe)",
   "gc": "AZCE",
   "rc": 2533872289,
@@ -16977,7 +16988,7 @@
   "rg": "Europe"
  },
  "3a580388d700ea1d8f4032bda4f67045cde2527e": {
-  "gn": "Kidou Senshi Gundam - Seed Destiny",
+  "gn": "Kidou Senshi Gundam SEED Destiny",
   "ne": "(Japan)",
   "gc": "B42J",
   "rc": 2854554826,
@@ -17021,7 +17032,7 @@
   "rg": "USA, Europe"
  },
  "5213e75d0221404fc3b2bf7c362b4536e3a01b05": {
-  "gn": "Megaman - Battle Network 4 - Blue Moon",
+  "gn": "Mega Man - Battle Network 4 - Blue Moon",
   "ne": "(USA)",
   "gc": "B4BE",
   "rc": 1971996393,
@@ -17253,7 +17264,7 @@
   "rg": "Europe"
  },
  "37d316efac8e3a7f2bbfd4695c65cbcd368d8d98": {
-  "gn": "Megaman - Battle Network 4 - Red Sun",
+  "gn": "Mega Man - Battle Network 4 - Red Sun",
   "ne": "(USA)",
   "gc": "B4WE",
   "rc": 555772252,
@@ -17298,7 +17309,7 @@
   "rg": "Europe"
  },
  "f2f3e9851f3c5b660bbaf1511ba01acbfa2681e4": {
-  "gn": "Megaman Zero 4",
+  "gn": "Mega Man Zero 4",
   "ne": "(USA)",
   "gc": "B4ZE",
   "rc": 2128758675,
@@ -21634,7 +21645,7 @@
   "rg": "Japan"
  },
  "5af566626a1f081ef078097eb04ca07ae50c0151": {
-  "gn": "Mobile Suit Gundam Seed - Battle Assault",
+  "gn": "Mobile Suit Gundam SEED - Battle Assault",
   "ne": "(USA)",
   "gc": "BGNE",
   "rc": 403510417,
@@ -21645,7 +21656,7 @@
   "rg": "USA"
  },
  "58309c8fe786992b3fc494995e6101b6eb72b213": {
-  "gn": "Kidou Senshi Gundam Seed - Tomo to Kimi to Koko de.",
+  "gn": "Kidou Senshi Gundam SEED - Tomo to Kimi to Koko de.",
   "ne": "(Japan)",
   "gc": "BGNJ",
   "rc": 1941911627,
@@ -25043,14 +25054,14 @@
  },
  "f1305be6bd916dbc2b374dfa22882537b3ac11fe": {
   "gn": "Metroid - Zero Mission",
-  "ne": "(USA)",
+  "ne": "(USA, Australia)",
   "gc": "BMXE",
   "rc": 1549903940,
   "rs": 8388608,
   "st": 3,
   "ss": 32768,
   "lg": "En",
-  "rg": "USA"
+  "rg": "USA, Australia"
  },
  "c8125a57b74dda11b39be5be5ac6ab672e62ad61": {
   "gn": "Metroid - Zero Mission",
@@ -26000,6 +26011,18 @@
   "lg": "De",
   "rg": "Germany"
  },
+ "070c4e1b9f132f025bdca4c075e62644fb9e8d12": {
+  "gn": "Pokemon - LeafGreen Version",
+  "ne": "(USA, Europe) (Rev 10) (Switch)",
+  "gc": "BPGE",
+  "rc": 1239283282,
+  "rs": 16777216,
+  "st": 5,
+  "ss": 131072,
+  "rv": "Rev 10",
+  "lg": "En",
+  "rg": "USA, Europe"
+ },
  "1b43315c2906e28c7c6e6d4c934406b970eef2aa": {
   "gn": "Pokemon - LeafGreen Version",
   "ne": "(USA, Europe)",
@@ -26287,6 +26310,18 @@
   "rs": 16777216,
   "st": 5,
   "ss": 131072,
+  "lg": "En",
+  "rg": "USA, Europe"
+ },
+ "37e42f0d7810d5ece82b835644c4bd2dd59d1258": {
+  "gn": "Pokemon - FireRed Version",
+  "ne": "(USA, Europe) (Rev 10) (Switch)",
+  "gc": "BPRE",
+  "rc": 827673634,
+  "rs": 16777216,
+  "st": 5,
+  "ss": 131072,
+  "rv": "Rev 10",
   "lg": "En",
   "rg": "USA, Europe"
  },
@@ -26987,7 +27022,7 @@
   "rg": "Japan"
  },
  "413ff0e61ab82ab8d0b931a0d2c25bd0c345aa83": {
-  "gn": "Megaman - Battle Network 6 - Cybeast Gregar",
+  "gn": "Mega Man - Battle Network 6 - Cybeast Gregar",
   "ne": "(USA)",
   "gc": "BR5E",
   "rc": 2034573698,
@@ -27020,7 +27055,7 @@
   "rg": "Europe"
  },
  "37294bc55c5803963a4cba09e9160157448b4fbd": {
-  "gn": "Megaman - Battle Network 6 - Cybeast Falzar",
+  "gn": "Mega Man - Battle Network 6 - Cybeast Falzar",
   "ne": "(USA)",
   "gc": "BR6E",
   "rc": 3739677353,
@@ -27119,7 +27154,7 @@
   "rg": "Europe"
  },
  "9f351ddaaa15ed3973aa19c51c060437072d8896": {
-  "gn": "Megaman - Battle Network 5 - Team Protoman",
+  "gn": "Mega Man - Battle Network 5 - Team Protoman",
   "ne": "(USA)",
   "gc": "BRBE",
   "rc": 2805892004,
@@ -27286,7 +27321,7 @@
   "rg": "Japan"
  },
  "1e1487e2a23572f121548bb9f4d7b8a34bf39275": {
-  "gn": "Megaman - Battle Network 5 - Team Colonel",
+  "gn": "Mega Man - Battle Network 5 - Team Colonel",
   "ne": "(USA)",
   "gc": "BRKE",
   "rc": 2773677699,
@@ -30497,7 +30532,7 @@
   "rg": "Japan"
  },
  "909e3085acf81144e8845c7285df22e7aaad1073": {
-  "gn": "Megaman Zero 3",
+  "gn": "Mega Man Zero 3",
   "ne": "(USA)",
   "gc": "BZ3E",
   "rc": 663024626,

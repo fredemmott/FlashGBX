@@ -1,10 +1,12 @@
 {
 	"type":"DMG",
 	"names":[
-		"ModRetro Chromatic Cartridge with 39VF1681"
+		"ModRetro Chromatic Cartridge with 39VF1681",
+		"ModRetro Chromatic Cartridge with 39VF1682"
 	],
 	"flash_ids":[
-		[ 0xBF, 0xC8 ]
+		[ 0xBF, 0xC8 ],
+		[ 0xBF, 0xC9 ]
 	],
 	"flash_size":0x200000,
 	"voltage":3.3,

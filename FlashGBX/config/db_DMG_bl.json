@@ -1,10 +1,10 @@
 {
- "MARIO DELUX": [
+ "MARIO DELUXAHYE": [
   1048576,
   8192,
   1
  ],
- "SHANTAE": [
+ "SHANTAEB3AE": [
   3997696,
   8192,
   2
@@ -29,17 +29,77 @@
   32768,
   2
  ],
- "POKEMON_GLD": [
+ "POKEMON_GLDAAUE": [
   1900544,
   32768,
   2
  ],
- "POKEMON_SLV": [
+ "POKEMON_SLVAAXE": [
   1900544,
   32768,
   2
  ],
- "PM_CRYSTAL": [
+ "PM_CRYSTALBYTE": [
+  2162688,
+  32768,
+  2
+ ],
+ "POKEMON_GLDAAUD": [
+  1900544,
+  32768,
+  2
+ ],
+ "POKEMON_SLVAAXD": [
+  1900544,
+  32768,
+  2
+ ],
+ "PM_CRYSTALBYTD": [
+  2162688,
+  32768,
+  2
+ ],
+ "POKEMON_GLDAAUF": [
+  1900544,
+  32768,
+  2
+ ],
+ "POKEMON_SLVAAXF": [
+  1900544,
+  32768,
+  2
+ ],
+ "PM_CRYSTALBYTF": [
+  2162688,
+  32768,
+  2
+ ],
+ "POKEMON_GLDAAUI": [
+  1900544,
+  32768,
+  2
+ ],
+ "POKEMON_SLVAAXI": [
+  1900544,
+  32768,
+  2
+ ],
+ "PM_CRYSTALBYTI": [
+  2162688,
+  32768,
+  2
+ ],
+ "POKEMON_GLDAAUS": [
+  1900544,
+  32768,
+  2
+ ],
+ "POKEMON_SLVAAXS": [
+  1900544,
+  32768,
+  2
+ ],
+ "PM_CRYSTALBYTS": [
   2162688,
   32768,
   2
@@ -48,5 +108,35 @@
   2162688,
   32768,
   2
+ ],
+ "ZELDAAZLJ": [
+  1114112,
+  32768,
+  1
+ ],
+ "ZELDAAZLE": [
+  1114112,
+  32768,
+  1
+ ],
+ "ZELDAAZLD": [
+  1114112,
+  32768,
+  1
+ ],
+ "ZELDAAZLF": [
+  1114112,
+  32768,
+  1
+ ],
+ "ZELDAAZLI": [
+  1114112,
+  32768,
+  1
+ ],
+ "ZELDAAZLS": [
+  1114112,
+  32768,
+  1
  ]
 }

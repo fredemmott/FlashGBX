@@ -217,11 +217,14 @@ class GbxDevice(LK_Device):
 		# Superclass behavior includes PCB version, which isn't applicable here
 		return self.GetName()
 
-	def CanSetVoltageManually(self):
+	def CanSetVoltageBySwitch(self):
 		return False
 
-	def CanSetVoltageAutomatically(self):
+	def CanSetVoltageByAutoswitch(self):
 		return True
+
+	def CanSetVoltageByCode(self):
+		return False
 
 	def CanPowerCycleCart(self):
 		return self.FW["cart_power_ctrl"]

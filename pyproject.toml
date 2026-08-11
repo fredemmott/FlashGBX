@@ -1,0 +1,49 @@
+[project]
+name = "FlashGBX"
+version = "5.0.1"
+description = "Reads and writes Game Boy and Game Boy Advance cartridge data"
+readme = "README.md"
+requires-python = ">=3.7"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+
+authors = [
+    { name = "Lesserkuma" }
+]
+
+dependencies = [
+    "pyserial>=3.5",
+    "Pillow>=9.1.0",
+    "requests",
+    "python-dateutil",
+    "packaging"
+]
+
+# Classifiers **hier unter project**, nicht scripts**
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Topic :: Terminals :: Serial",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers"
+]
+
+[project.optional-dependencies]
+qt5 = ["PySide2>=5.14", "Pillow<10.0.0"]
+qt6 = ["PySide6"]
+
+[project.urls]
+Source = "https://github.com/Lesserkuma/FlashGBX/"
+Tracker = "https://github.com/Lesserkuma/FlashGBX/issues"
+
+[project.scripts]
+flashgbx = "FlashGBX.FlashGBX:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["FlashGBX*"]
+
+[tool.setuptools.package-data]
+FlashGBX = ["res/**/*", "locale/**/*"]

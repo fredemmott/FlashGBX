@@ -35,18 +35,19 @@ jobs:
         with:
           path: |
             ${{ github.workspace }}/venv
-          key: flashgbx-macos-${{ matrix.arch }}-python-dependencies-2024110401
+          key: flashgbx-macos-${{ matrix.arch }}-python-dependencies-20260207
           restore-keys: |
             flashgbx-macos-${{ matrix.arch }}-python-dependencies-
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.10.11'
 
       - name: Install Python packages
         if: steps.cache-pip.outputs.cache-hit != 'true'
         run: |
+          python -m pip install --upgrade pip
           python -m venv ${{ github.workspace }}/venv
           source ${{ github.workspace }}/venv/bin/activate
           python -m pip install pyinstaller==6.11.0 Pillow==10.3.0 PySide6==6.7.2 pyserial==3.5 python-dateutil==2.9.0.post0 requests==2.32.3 packaging==25.0
@@ -54,14 +55,84 @@ jobs:
       - name: Build FlashGBX
         run: |
           cd "${{ github.workspace }}"
-          cp ".github/build/macOS/FlashGBX.spec" .
+          cat > "./FlashGBX.spec" <<'PYINSTALLER_SPEC'
+          # -*- mode: python ; coding: utf-8 -*-
+
+          hiddenimports = [
+              'FlashGBX.hw_GBxCartRW',
+              'FlashGBX.hw_GBFlash',
+              'FlashGBX.hw_JoeyJr',
+              'FlashGBX.hw_GameBub',
+          ]
+          
+          a = Analysis(
+            ['run.py'],
+            pathex=[],
+            binaries=[('FlashGBX/res/icon.ico', 'res')],
+            datas=[],
+            hiddenimports=hiddenimports,
+            hookspath=[],
+            hooksconfig={},
+            runtime_hooks=[],
+            excludes=[],
+            noarchive=False,
+          )
+
+          pyz = PYZ(a.pure)
+          exe = EXE(
+            pyz,
+            a.scripts,
+            [],
+            exclude_binaries=True,
+            name='FlashGBX',
+            debug=False,
+            bootloader_ignore_signals=False,
+            strip=False,
+            upx=True,
+            console=False,
+            icon=['FlashGBX/res/icon.ico'],
+          )
+          coll = COLLECT(
+            exe,
+            a.binaries,
+            a.datas,
+            strip=False,
+            upx=True,
+            upx_exclude=[],
+            name='FlashGBX',
+          )
+          info_plist = {
+            'CFBundleName': 'FlashGBX',
+            'CFBundleDisplayName': 'FlashGBX',
+            'CFBundleGetInfoString': 'Interface software for GB/GBC/GBA cart readers',
+            'CFBundleShortVersionString': '<APP_VERSION>',
+            'CFBundleIdentifier': 'com.lesserkuma.FlashGBX',
+          }
+          app = BUNDLE(
+            coll,
+            name='FlashGBX.app',
+            icon='FlashGBX/res/icon.ico',
+            bundle_identifier='com.lesserkuma.FlashGBX',
+            info_plist=info_plist,
+          )
+          PYINSTALLER_SPEC
           sed -i '' 's/<APP_VERSION>/${{ env.VERSION }}/g' "./FlashGBX.spec"
           rm -r FlashGBX/config
           source ${{ github.workspace }}/venv/bin/activate
           pyinstaller FlashGBX.spec
           mkdir dist/FlashGBX.app/Contents/MacOS/config
           mkdir dist/FlashGBX.app/Contents/MacOS/res
+          mkdir dist/FlashGBX.app/Contents/MacOS/locale
           cp -r FlashGBX/res/* dist/FlashGBX.app/Contents/MacOS/res
+          cp -r FlashGBX/locale/* dist/FlashGBX.app/Contents/MacOS/locale
+          
+          # Remove unnecessary files
+          rm -rf dist/FlashGBX.app/Contents/Resources/PySide6/Qt/lib/Qt{Pdf*,Quick*,Qml*,Network*,OpenGL*}.framework*
+          rm -rf dist/FlashGBX.app/Contents/Resources/Qt{Pdf*,Quick*,Qml*,Network*,OpenGL*}
+          rm -rf dist/FlashGBX.app/Contents/Resources/PySide6/Qt/translations
+          rm -rf dist/FlashGBX.app/Contents/Frameworks/PySide6/Qt/lib/Qt{Pdf*,Quick*,Qml*,Network*,OpenGL*}.framework*
+          rm -rf dist/FlashGBX.app/Contents/Frameworks/Qt{Pdf*,Quick*,Qml*,Network*,OpenGL*}
+          rm -rf dist/FlashGBX.app/Contents/Frameworks/PySide6/Qt/translations
 
       - name: Create DMG
         run: |
@@ -69,7 +140,7 @@ jobs:
           mkdir -p "${{ github.workspace }}/dist/dmg"
           cp -r "${{ github.workspace }}/dist/FlashGBX.app" "${{ github.workspace }}/dist/dmg"
 
-          dmg_path="${{ github.workspace }}/dist/FlashGBX_${{ env.VERSION }}_macOS-${{ matrix.arch }}.dmg"
+          dmg_path="${{ github.workspace }}/dist/FlashGBX-${{ env.VERSION }}_macOS-${{ matrix.arch }}.dmg"
 
           max_retries=5
           retry_delay=10
@@ -104,14 +175,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FlashGBX_macOS-${{ matrix.arch }}
-          path: ${{ github.workspace }}/dist/FlashGBX_${{ env.VERSION }}_macOS-${{ matrix.arch }}.dmg
+          path: ${{ github.workspace }}/dist/FlashGBX-${{ env.VERSION }}_macOS-${{ matrix.arch }}.dmg
 
       - name: Upload release asset
         if: env.VERSION != '0.0'
         uses: softprops/action-gh-release@v2.0.8
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: ${{ github.workspace }}/dist/FlashGBX_${{ env.VERSION }}_macOS-${{ matrix.arch }}.dmg
+          files: ${{ github.workspace }}/dist/FlashGBX-${{ env.VERSION }}_macOS-${{ matrix.arch }}.dmg
           draft: false
           prerelease: false
         env:

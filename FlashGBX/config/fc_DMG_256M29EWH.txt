@@ -13,7 +13,7 @@
 	"flash_size":0x2000000,
 	"start_addr":0,
 	"first_bank":1,
-	"chip_erase_timeout":120,
+	"chip_erase_timeout":300,
 	"sector_size_from_cfi":true,
 	"buffer_size":256,
 	"reset_every":0x800000,

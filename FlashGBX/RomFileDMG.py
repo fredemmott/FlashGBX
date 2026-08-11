@@ -3,7 +3,10 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import hashlib, re, string, struct, os, json, copy
-from . import Util
+from .i18n import __
+from .CartridgeTypes import RomSizes, DmgSaveTypes
+from .Logging import dprint, ANSI
+from .app import AppContext
 
 try:
 	Image = None
@@ -15,30 +18,31 @@ class RomFileDMG:
 	ROMFILE_PATH = None
 	ROMFILE = bytearray()
 	DATA = None
-	
+	BATTERYLESS_SRAM_DB = None
+
 	def __init__(self, file=None):
 		if isinstance(file, str):
 			self.Open(file)
 		elif isinstance(file, bytearray):
 			self.ROMFILE = file
-	
+
 	def Open(self, file):
 		self.ROMFILE_PATH = file
 		self.Load()
-	
+
 	def Load(self):
 		with open(self.ROMFILE_PATH, "rb") as f:
 			self.ROMFILE = bytearray(f.read(0x1000))
-	
+
 	def CalcChecksumHeader(self, fix=False):
 		checksum = 0
 		for i in range(0x134, 0x14D):
 			checksum = checksum - self.ROMFILE[i] - 1
 		checksum = checksum & 0xFF
-		
+
 		if fix: self.ROMFILE[0x14D] = checksum
 		return checksum
-	
+
 	def CalcChecksumGlobal(self, fix=False):
 		temp1 = self.ROMFILE[0x14E]
 		temp2 = self.ROMFILE[0x14F]
@@ -52,12 +56,12 @@ class RomFileDMG:
 			self.ROMFILE[0x14E] = temp1
 			self.ROMFILE[0x14F] = temp2
 		return checksum
-	
+
 	def FixHeader(self):
 		self.CalcChecksumHeader(True)
 		self.CalcChecksumGlobal(True)
 		return self.ROMFILE[0:0x200]
-	
+
 	def LogoToImage(self, data, valid=True):
 		if Image is None: return False
 		img = Image.new(mode='P', size=(48, 8))
@@ -97,7 +101,7 @@ class RomFileDMG:
 		data["old_lic"] = int(buffer[0x14B])
 		temp = self.LogoToImage(buffer[0x104:0x134], data["logo_correct"])
 		if temp is not False and not data["empty"]: data["logo"] = temp
-		
+
 		if data["cgb"] in (0x80, 0xC0):
 			data["game_title_raw"] = bytearray(buffer[0x134:0x143]).decode("ascii", "replace")
 		else:
@@ -123,14 +127,15 @@ class RomFileDMG:
 		data["mapper"] = "?"
 		data["rom_size_raw"] = int(buffer[0x148])
 		data["rom_size"] = "?"
-		if buffer[0x148] < len(Util.DMG_Header_ROM_Sizes): data["rom_size"] = Util.DMG_Header_ROM_Sizes[buffer[0x148]]
+		if buffer[0x148] < RomSizes().GetNumberOfTypes():
+			data["rom_size"] = RomSizes().GetString(index=buffer[0x148])
 		data["ram_size_raw"] = int(buffer[0x149])
 		if data["mapper_raw"] == 0x05 or data["mapper_raw"] == 0x06:
 			data["ram_size"] = 0x200
 		else:
 			data["ram_size"] = "?"
-			if buffer[0x149]  < len(Util.DMG_Header_RAM_Sizes):
-				data["ram_size"] = Util.DMG_Header_RAM_Sizes[buffer[0x149]]
+			if buffer[0x149] < DmgSaveTypes().GetNumberOfTypes():
+				data["ram_size"] = DmgSaveTypes(index=buffer[0x149]).GetString()
 		data["header_sha1"] = hashlib.sha1(buffer[0x0:0x180]).hexdigest()
 		data["version"] = int(buffer[0x14C])
 		data["header_checksum"] = int(buffer[0x14D])
@@ -139,7 +144,7 @@ class RomFileDMG:
 		data["rom_checksum"] = int(256 * buffer[0x14E] + buffer[0x14F])
 		data["rom_checksum_calc"] = self.CalcChecksumGlobal()
 		data["rom_checksum_correct"] = data["rom_checksum"] == data["rom_checksum_calc"]
-		
+
 		if unchanged:
 			data["unchanged"] = copy.copy(data)
 		else:
@@ -184,28 +189,33 @@ class RomFileDMG:
 				data["rom_size_raw"] = 0x05
 				data["ram_size_raw"] = 0x04
 				data["mapper_raw"] = 0x105
-			
+			elif data["mapper_raw"] == 0x1B and data["game_title"] == "GBMEM-MENU MMSA" and data["version"] == 0x01:
+				data["rom_size_raw"] = 0x05
+				data["ram_size_raw"] = 0x04
+				data["mapper_raw"] = 0x105
+
 			# M161 (Mani 4 in 1)
 			elif data["mapper_raw"] == 0x10 and data["game_title"] == "TETRIS SET" and data["header_checksum"] == 0x3F:
 				data["mapper_raw"] = 0x104
-			
+
 			# MMM01 (Mani 4 in 1)
 			elif data["mapper_raw"] == 0x11 and data["game_title"] == "BOUKENJIMA2 SET" and data["header_checksum"] == 0 or \
 			data["mapper_raw"] == 0x11 and data["game_title"] == "BUBBLEBOBBLE SET" and data["header_checksum"] == 0xC6 or \
 			data["mapper_raw"] == 0x11 and data["game_title"] == "GANBARUGA SET" and data["header_checksum"] == 0x90 or \
 			data["mapper_raw"] == 0x11 and data["game_title"] == "RTYPE 2 SET" and data["header_checksum"] == 0x32:
 				data["mapper_raw"] = 0x0B
-			
+
 			# Unlicensed 256M Mapper
 			elif (data["game_title"].upper() == "GB HICOL" and data["header_checksum"] in (0x4A, 0x49, 0xE8, 0xE9)) or \
 			(data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48):
 				data["rom_size_raw"] = 0x0A
 				data["ram_size_raw"] = 0x201
 				data["mapper_raw"] = 0x201
-			elif buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder":
+			elif buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder" or (data["mapper_raw"] in (0x19, 0x1B) and data["game_title"] == "GBMEM-MENU 256M" and data["version"] == 0x01):
+				data["rom_size_raw"] = 0x0A
 				data["ram_size_raw"] = 0x201
 				data["mapper_raw"] = 0x201
-			
+
 			# Unlicensed Wisdom Tree Mapper
 			elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray([ 0xF5, 0xD2, 0x91, 0x7D, 0x5E, 0x5B, 0xAB, 0xD8, 0x5F, 0x0A, 0xC7, 0xBA, 0x56, 0xEB, 0x49, 0x8A, 0xBA, 0x12, 0x49, 0x13 ]): # Exodus / Joshua
 				data["rom_size_raw"] = 0x02
@@ -219,7 +229,7 @@ class RomFileDMG:
 			elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray([ 0x36, 0x89, 0x60, 0xDD, 0x1B, 0xE1, 0x73, 0x86, 0x8B, 0x24, 0xA3, 0xDC, 0x57, 0xA5, 0xCB, 0x7C, 0xCA, 0x62, 0xDD, 0x34 ]): # NIV Bible
 				data["rom_size_raw"] = 0x06
 				data["mapper_raw"] = 0x202
-			
+
 			# Unlicensed Xploder GB Mapper
 			elif hashlib.sha1(buffer[0x104:0x150]).digest() == bytearray([ 0x06, 0xAC, 0xDC, 0xB6, 0xD1, 0x9B, 0xD9, 0xE3, 0x95, 0xA2, 0x38, 0xB8, 0x00, 0x97, 0x0D, 0x78, 0x3F, 0xC6, 0xB7, 0xBD ]):
 				data["rom_size_raw"] = 0x02
@@ -235,7 +245,7 @@ class RomFileDMG:
 				except:
 					pass
 				data["version"] = "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(buffer[0xD8], buffer[0xD9], buffer[0xDA], buffer[0xD7], buffer[0xD0], buffer[0xD1], buffer[0xD2], buffer[0xD3], buffer[0xD4], struct.unpack("<H", buffer[0xD5:0xD7])[0]).replace("\x00", "")
-			
+
 			# Unlicensed Datel Orbit V2 Mapper
 			elif hashlib.sha1(buffer[0x101:0x134]).digest() == bytearray([ 0xFA, 0x68, 0x5A, 0x37, 0x85, 0xEF, 0x65, 0x23, 0x2D, 0x6F, 0x23, 0xAC, 0x02, 0x05, 0x15, 0x20, 0x8B, 0xDE, 0xC5, 0x23 ]):
 				data["rom_size_raw"] = 0x02
@@ -250,7 +260,7 @@ class RomFileDMG:
 					data["game_title"] = game_title
 				except:
 					pass
-			
+
 			# Unlicensed Datel Orbit V2 Mapper (older firmware)
 			elif (
 				hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray([ 0xC1, 0xF4, 0x15, 0x4A, 0xEF, 0xCC, 0x5B, 0xE7, 0xEC, 0x83, 0xA8, 0xBB, 0x7B, 0xC0, 0x95, 0x83, 0x35, 0xEC, 0x9A, 0xF2 ]) or \
@@ -267,21 +277,7 @@ class RomFileDMG:
 					data["game_title"] = game_title
 				except:
 					pass
-			
-			# Unlicensed Datel Mega Memory Card
-			# elif hashlib.sha1(buffer[0x104:0x150]).digest() == bytearray([ 0x05, 0xBE, 0x44, 0xBA, 0xE8, 0x0A, 0x59, 0x76, 0x34, 0x1B, 0x01, 0xDF, 0x92, 0xDD, 0xAB, 0x8C, 0x7A, 0x2A, 0x8F, 0x4E ]):
-			# 	data["rom_size_raw"] = 0x00
-			# 	data["ram_size_raw"] = 0x206
-			# 	data["mapper_raw"] = 0x206
-			# 	try:
-			# 		game_title = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xFF", "")
-			# 		game_title = re.sub(r"(\x00+)$", "", game_title)
-			# 		game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-			# 		game_title = ''.join(filter(lambda x: x in set(string.printable), game_title))
-			# 		data["game_title"] = game_title
-			# 	except:
-			# 		pass
-			
+
 			# Unlicensed Sachen MMC1/MMC2
 			elif len(buffer) >= 0x280:
 				sachen_version = 0
@@ -442,13 +438,17 @@ class RomFileDMG:
 			if data["game_title"] == "PHOTO":
 				data["ram_size_raw"] = 0x204
 
-		if data["mapper_raw"] in Util.DMG_Header_Mapper:
-			data["mapper"] = Util.DMG_Header_Mapper[data["mapper_raw"]]
+		from .Mapper import DMG_Mapper
+		if data["mapper_raw"] in DMG_Mapper().GetAllMapperIds():
+			data["mapper"] = DMG_Mapper().GetMapperName(data["mapper_raw"])
 		elif data["logo_correct"]:
-			print("{:s}WARNING: Unknown memory bank controller type 0x{:02X}{:s}".format(Util.ANSI.YELLOW, data["mapper_raw"], Util.ANSI.RESET))
+			print("{:s}{}{:s}".format(ANSI.YELLOW, __("Warning: Unknown mapper type value {mapper}", mapper="0x{:02X}".format(data["mapper_raw"])), ANSI.RESET))
 
 		self.DATA = data
 		data["db"] = self.GetDatabaseEntry()
+		batteryless_sram = self.GetBatterylessSramConfig(data)
+		if batteryless_sram is not None:
+			data["batteryless_sram"] = batteryless_sram
 		if data["db"] is not None and data["game_code"] == "" and data["db"]["gc"] != "":
 			data["game_code"] = data["db"]["gc"][4:]
 		return data
@@ -456,12 +456,92 @@ class RomFileDMG:
 	def GetDatabaseEntry(self):
 		data = self.DATA
 		db_entry = None
-		if os.path.exists("{0:s}/db_DMG.json".format(Util.CONFIG_PATH)):
-			with open("{0:s}/db_DMG.json".format(Util.CONFIG_PATH), encoding="UTF-8") as f:
+		if os.path.exists("{0:s}/db_DMG.json".format(AppContext.CONFIG_PATH)):
+			with open("{0:s}/db_DMG.json".format(AppContext.CONFIG_PATH), encoding="UTF-8") as f:
 				db = f.read()
-				db = json.loads(db)
+				try:
+					db = json.loads(db)
+				except (json.JSONDecodeError, ValueError) as e:
+					print(__("Error: Database for Game Boy titles is corrupted.") + "\n" + str(e))
+					return None
 				if data["header_sha1"] in db.keys():
 					db_entry = db[data["header_sha1"]]
+				else:
+					dprint(__("No database entry found for this title (Header SHA1: {sha1})", sha1=data["header_sha1"]))
 		else:
-			print("FAIL: Database for Game Boy titles not found at {0:s}/db_DMG.json".format(Util.CONFIG_PATH))
+			print(__("Error: Database for Game Boy titles not found at {path}", path=AppContext.CONFIG_PATH + os.sep + "db_DMG.json"))
 		return db_entry
+
+	@classmethod
+	def GetBatterylessSramConfig(cls, header):
+		if not isinstance(header, dict): return None
+		if "game_title_raw" not in header: return None
+
+		if cls.BATTERYLESS_SRAM_DB is None:
+			config_paths = [
+				AppContext.CONFIG_PATH,
+				os.path.join(os.path.dirname(__file__), "config")
+			]
+			for config_path in config_paths:
+				if config_path == "": continue
+				db_path = os.path.join(config_path, "db_DMG_bl.json")
+				if not os.path.exists(db_path): continue
+				try:
+					with open(db_path, encoding="UTF-8") as f:
+						cls.BATTERYLESS_SRAM_DB = json.loads(f.read())
+					break
+				except Exception as e:
+					print("Error: Could not load the database of batteryless SRAM configurations.", e, sep="\n")
+			if cls.BATTERYLESS_SRAM_DB is None:
+				cls.BATTERYLESS_SRAM_DB = False
+
+		db = cls.BATTERYLESS_SRAM_DB
+		if not db: return None
+
+		titles = [
+			header["game_title_raw"],
+			header["game_title_raw"].replace("\x00", "").rstrip(),
+			header["game_title"] if "game_title" in header else ""
+		]
+		for title in titles:
+			if title == "": continue
+			if title not in db: continue
+			entry = db[title]
+			batteryless_sram = {
+				"bl_offset": entry[0],
+				"bl_size": entry[1],
+			}
+			if len(entry) >= 3:
+				batteryless_sram["bl_layout"] = entry[2]
+			return batteryless_sram
+
+		return None
+
+def from_isx(buffer):
+	import io
+	import struct
+	from .i18n import __
+	data_input = io.BytesIO(buffer)
+	data_output = bytearray(8 * 1024 * 1024)
+	rom_size = 0
+	temp = 32 * 1024
+	while 1:
+		try:
+			rec_type = struct.unpack('B', data_input.read(1))[0]
+			if rec_type == 4:
+				break
+			elif rec_type != 1:
+				print(__("Warning: Unhandled ISX record type {type} found. Converted ROM may not be working correctly.", type="0x{:02X}".format(rec_type)))
+				continue
+			bank = struct.unpack('B', data_input.read(1))[0]
+			offset = struct.unpack('<H', data_input.read(2))[0] % 0x4000
+			realoffset = bank * 16 * 1024 + offset
+			size = struct.unpack('<H', data_input.read(2))[0]
+			data_output[realoffset:realoffset+size] = data_input.read(size)
+			rom_size = max(rom_size, realoffset + size)
+			temp = 32 * 1024
+			while temp < rom_size: temp *= 2
+		except:
+			print(__("Error: Couldn’t convert ISX file correctly."))
+			break
+	return data_output[:temp]

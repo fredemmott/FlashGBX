@@ -44,7 +44,7 @@ Name: "custom"; Description: "Custom Installation"; Flags: iscustom
 
 [Components]
 Name: "program"; Description: "FlashGBX application"; Types: full custom; Flags: fixed
-Name: "driver_ch341"; Description: "CH340/CH341 driver v3.8.2023.02 for GBxCart RW and GBFlash (install/re-install)"; Types: full
+Name: "driver_ch341"; Description: "CH340/CH341 driver v3.9.2024.09 for GBxCart RW and GBFlash (install/re-install)"; Types: full
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -60,7 +60,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\Drivers\CH341\CH341SER.EXE"; Description: "Install CH340/CH341 driver"; Flags: waituntilterminated; Components: driver_ch341
-Filename: "{app}\Python_3.10.11\python.exe"; Parameters: "-m pip install PySide6==6.5.0 --no-warn-script-location --isolated --cache-dir {app}\Python_3.10.11\cache"; StatusMsg: "Setting up prerequisites in embedded Python runtime (only used for FlashGBX)..."; Flags: waituntilterminated runminimized; Components: program
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [InstallDelete]

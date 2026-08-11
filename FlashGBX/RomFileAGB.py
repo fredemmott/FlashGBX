@@ -3,7 +3,9 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import hashlib, re, zlib, string, os, json, copy, struct
-from . import Util
+from .i18n import __
+from .Logging import dprint
+from .app import AppContext
 
 try:
 	Image = None
@@ -22,37 +24,41 @@ class RomFileAGB:
 			if self.ROMFILE_PATH != None: self.Load()
 		elif isinstance(file, bytearray):
 			self.ROMFILE = file
-	
+
 	def Open(self, file):
 		self.ROMFILE_PATH = file
 		self.Load()
-	
+
 	def Load(self):
 		with open(self.ROMFILE_PATH, "rb") as f:
 			self.ROMFILE = bytearray(f.read())
-	
+
 	def CalcChecksumHeader(self, fix=False):
 		checksum = 0
 		for i in range(0xA0, 0xBD):
 			checksum = checksum - self.ROMFILE[i]
 		checksum = (checksum - 0x19) & 0xFF
-		
+
 		if fix: self.ROMFILE[0xBD] = checksum
 		return checksum
-	
+
 	def CalcChecksumGlobal(self):
 		return (zlib.crc32(self.ROMFILE) & 0xFFFFFFFF)
-	
+
 	def FixHeader(self):
 		self.CalcChecksumHeader(True)
 		return self.ROMFILE[0:0x200]
-	
+
 	def LogoToImage(self, data, valid=True):
 		if Image is None: return False
 		if data in (bytearray([0] * len(data)), bytearray([0xFF] * len(data))): return False
-		
-		# HuffUnComp function provided by Winter1760, thank you!
+
+		# Based on a HuffUnComp function provided by Winter1760, thank you!
 		def HuffUnComp(data):
+			BITS = 4
+			OUT_SIZE = 0xD4
+			TREE = bytes([0x40, 0x00, 0x00, 0x00, 0x01, 0x81, 0x82, 0x82, 0x83, 0x0F, 0x83, 0x0C, 0xC3, 0x03, 0x83, 0x01, 0x83, 0x04, 0xC3, 0x08, 0x0E, 0x02, 0xC2, 0x0D, 0xC2, 0x07, 0x0B, 0x06, 0x0A, 0x05, 0x09])
+			data = bytes([0x20 | BITS]) + OUT_SIZE.to_bytes(3, "little") + bytes([len(TREE) // 2]) + TREE + data
 			bits = data[0] & 15
 			out_size = int.from_bytes(data[1:4], "little") & 0xFFFF
 			i = 6 + data[4] * 2
@@ -80,7 +86,7 @@ class RomFileAGB:
 							out_ready = 0
 						node_offs = 5
 			return out
-		
+
 		def Diff16BitUnFilter(data):
 			header = struct.unpack("I", data[0:4])[0]
 			out_size = (header >> 8) & 0xFFFF
@@ -94,10 +100,7 @@ class RomFileAGB:
 				pos += 2
 				prev = temp
 			return dest
-		
-		temp = bytearray.fromhex("09050A060B07C20DC2020E08C30483018303C30C830F8382828101000000400F0000D424")
-		temp.reverse()
-		data = temp + data
+
 		data = HuffUnComp(data)
 		data = Diff16BitUnFilter(data)
 
@@ -117,7 +120,7 @@ class RomFileAGB:
 						y = tile_row * 8 + tile_h
 						pixels[x, y] = pixel
 		return img
-	
+
 	def GetHeader(self, unchanged=False):
 		buffer = bytearray(self.ROMFILE)
 		data = {}
@@ -132,7 +135,7 @@ class RomFileAGB:
 			nocart_hashes.append(bytearray([ 0x2B, 0xDC, 0x7D, 0xEF, 0x6C, 0x48, 0x1F, 0xBF, 0xEE, 0xB8, 0x80, 0xB1, 0xD0, 0xFD, 0xF6, 0x57, 0x5D, 0x6A, 0x39, 0xBE ]))
 			nocart_hashes.append(bytearray([ 0x09, 0xB9, 0x0E, 0x53, 0x5E, 0x85, 0x50, 0xF8, 0x90, 0xA4, 0xF4, 0x77, 0x13, 0x7E, 0x45, 0x59, 0xA5, 0xC0, 0xA4, 0x45 ]))
 			data["empty_nocart"] = hashlib.sha1(buffer[0x10:0x50]).digest() in nocart_hashes
-		
+
 		data["empty"] = (buffer[0x04:0xA0] == bytearray([buffer[0x04]] * 0x9C)) or data["empty_nocart"]
 		if data["empty_nocart"]: buffer = bytearray([0x00] * len(buffer))
 		data["logo_correct"] = hashlib.sha1(buffer[0x04:0xA0]).digest() == bytearray([ 0x17, 0xDA, 0xA0, 0xFE, 0xC0, 0x2F, 0xC3, 0x3C, 0x0F, 0x6A, 0xBB, 0x54, 0x9A, 0x8B, 0x80, 0xB6, 0x61, 0x3B, 0x48, 0xEE ])
@@ -155,7 +158,7 @@ class RomFileAGB:
 		maker_code = re.sub(r"(\x00+)$", "", maker_code)
 		game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
 		maker_code = ''.join(filter(lambda x: x in set(string.printable), maker_code))
-		
+
 		data["maker_code"] = maker_code
 		data["header_checksum"] = int(buffer[0xBD])
 		data["header_checksum_calc"] = self.CalcChecksumHeader()
@@ -180,7 +183,7 @@ class RomFileAGB:
 		data["dacs_8m"] = False
 		if (data["game_title"] == "NGC-HIKARU3" and data["game_code"] == "GHTJ" and data["header_checksum"] == 0xB3):
 			data["dacs_8m"] = True
-		
+
 		# e-Reader
 		data["ereader"] = False
 		if (data["game_title"] == "CARDE READER" and data["game_code"] == "PEAJ" and data["header_checksum"] == 0x9E) or \
@@ -190,7 +193,7 @@ class RomFileAGB:
 
 		if unchanged:
 			data["unchanged"] = copy.copy(data)
-		
+
 		self.DATA = data
 		data["db"] = self.GetDatabaseEntry()
 
@@ -198,16 +201,20 @@ class RomFileAGB:
 		data["3d_memory"] = False
 		if data["db"] is not None and "3d" in data["db"]:
 			data["3d_memory"] = data["db"]["3d"]
-		
+
 		return data
 
 	def GetDatabaseEntry(self):
 		data = self.DATA
 		db_entry = None
-		if os.path.exists("{0:s}/db_AGB.json".format(Util.CONFIG_PATH)):
-			with open("{0:s}/db_AGB.json".format(Util.CONFIG_PATH), encoding="UTF-8") as f:
+		if os.path.exists("{0:s}/db_AGB.json".format(AppContext.CONFIG_PATH)):
+			with open("{0:s}/db_AGB.json".format(AppContext.CONFIG_PATH), encoding="UTF-8") as f:
 				db = f.read()
-				db = json.loads(db)
+				try:
+					db = json.loads(db)
+				except (json.JSONDecodeError, ValueError) as e:
+					print(__("Error: Database for Game Boy Advance titles is corrupted.") + "\n" + str(e))
+					return None
 				if data["header_sha1"] in db.keys():
 					db_entry = db[data["header_sha1"]]
 					if db_entry["gc"] in ("ZMAJ", "ZMBJ", "ZMDE"):
@@ -220,6 +227,8 @@ class RomFileAGB:
 						db_entry["gc"] = "PES-{:s}".format(db_entry["gc"])
 					else:
 						db_entry["gc"] = "AGB-{:s}".format(db_entry["gc"])
+				else:
+					dprint(__("No database entry found for this title (Header SHA1: {sha1})", sha1=data["header_sha1"]))
 		else:
-			print("FAIL: Database for Game Boy Advance titles not found at {0:s}/db_AGB.json".format(Util.CONFIG_PATH))
+			print(__("Error: Database for Game Boy Advance titles not found at {path}", path=AppContext.CONFIG_PATH + os.sep + "db_AGB.json"))
 		return db_entry

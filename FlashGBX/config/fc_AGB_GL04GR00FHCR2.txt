@@ -1,18 +1,19 @@
 {
 	"type":"AGB",
 	"names":[
-		"BX2006_TSOPBGA_0106 with M29W640",
-		"BX2006_TSOPBGA_6108 with M29W640"
+		"ACAM_GL04G10_2G_204 with GL04GR00FHCR2"
 	],
 	"flash_ids":[
-		[ 0x20, 0x00, 0x7D, 0x22 ]
+		[ 0x02, 0x00, 0x7D, 0x22 ]
 	],
 	"voltage":3.3,
-	"flash_size":0x800000,
-	"sector_size_from_cfi":true,
-	"chip_erase_timeout":120,
-	"enable_pullups":true,
-	"m29w640":true,
+	"flash_size":0x10000000,
+	"flash_bank_size":0x2000000,
+	"flash_bank_select_type":1,
+	"buffer_size":512,
+	"sector_size":0x20000,
+	"reset_every":0x400000,
+	"chip_erase_timeout":2000,
 	"command_set":"AMD",
 	"commands":{
 		"reset":[

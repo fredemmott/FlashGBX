@@ -1,6 +1,6 @@
 # FlashGBX (by Lesserkuma)
 
-for Windows, Linux, macOS (→ [Download](https://github.com/Lesserkuma/FlashGBX?tab=readme-ov-file#downloads))
+for Windows, Linux, macOS (→ [Download](#downloads))
 
 <img src="https://raw.githubusercontent.com/Lesserkuma/FlashGBX/master/.github/01.png" alt="FlashGBX on Windows 11" width="500"><br><img src="https://raw.githubusercontent.com/Lesserkuma/FlashGBX/master/.github/02.png" alt="GB Camera Album Viewer" width="500">
 
@@ -15,12 +15,14 @@ for Windows, Linux, macOS (→ [Download](https://github.com/Lesserkuma/FlashGBX
 - A flash chip query (including Common Flash Interface information) can be performed for flash cartridges
 - Decode and extract Game Boy Camera photos from save data
 - Generate ROM dump reports for game preservation purposes
+- Supported interface languages: English, German
 
 ### Compatible cartridge reader/writer hardware
 
 - [GBxCart RW](https://www.gbxcart.com/) (tested with v1.4, v1.4a and v1.4c)
 - [GBFlash](https://github.com/simonkwng/GBFlash) (tested with v1.2 and v1.3)
 - [Joey Jr](https://bennvenn.myshopify.com/collections/game-cart-to-pc-interface/products/usb-gb-c-cart-dumper-the-joey-jr) (tested with V2++)
+- [Game Bub](https://gamebub.net/)
 
 ## Cartridge Compatibility
 ### Supported cartridge memory mappers
@@ -245,6 +247,7 @@ for Windows, Linux, macOS (→ [Download](https://github.com/Lesserkuma/FlashGBX
   - 4444-39VF512 with 4444LLZBBO
   - 4455_4400_4000_4350_36L0R_V3 with M36L0R7050T
   - AA1030_TSOP88BALL with M36W0R603
+  - ACAM_GL04G10_2G_204 with GL04GR00FHCR2
   - AGB-E05-01 with GL128S
   - AGB-E05-01 with MSP55LV100G
   - AGB-E05-01 with MSP55LV128M
@@ -324,7 +327,7 @@ In the GitHub [Releases](https://github.com/Lesserkuma/FlashGBX/releases) sectio
 - x86-64/arm64 (.dmg file): Install by opening the .dmg file and copying over “FlashGBX” to the desktop or applications folder.
 
 > [!NOTE]
-> If the application doesn’t run, it probably got quarantined due to the lack of a Apple Developer Program certificate. Right-click the extracted FlashGBX icon, choose “Open Terminal at Folder” and enter this command to unquarantine it: `xattr -d com.apple.quarantine ../FlashGBX.app`.
+> If the application doesn’t run, it probably got quarantined due to the lack of a Apple Developer Program certificate. Extract the FlashGBX app from the .dmg file, then right-click the extracted FlashGBX icon, choose “Open Terminal at Folder” and enter this command to unquarantine it: `xattr -d com.apple.quarantine ../FlashGBX.app`.
 
 > [!NOTE]
 > If you use a Joey Jr, you will have run the separate [Joey Jr Firmware Updater](https://github.com/Lesserkuma/JoeyJr_FWUpdater) before using FlashGBX on macOS. Otherwise, FlashGBX will not be able to find your Joey Jr.
@@ -371,7 +374,7 @@ FlashGBX can also be run in a local Python environment like so:
 
 * When using reproduction/bootleg cartridges, hit “Analyze Flash Cart” before performing Backup ROM or Save Data functions.
 
-* When you see the message “The ROM was written and verified successfully!”, that means FlashGBX’s job was successful. Any problems that occur when using the cartridge afterwards are linked to incompatibilities between cartridge hardware and ROM file.
+* When you see the message “The ROM was written and verified successfully!”, that means FlashGBX’s job completed without errors. Any problems that occur when using the cartridge afterwards are linked to incompatibilities between cartridge hardware and ROM file.
 
   * In case of save type mismatch, use the “Analyze Flash Cart” feature or open up the cartridge and check for save memory chips to determine your cartridge save type, and compare with these spradsheets: [GBA](https://docs.google.com/spreadsheets/d/16-a3qDDkJJNpaYOEXi-xgTv-j1QznXHt9rTUJNFshjo), [GB/GBC](https://docs.google.com/spreadsheets/d/19ZnwTW_Y6anh1wLD6EkB5gZT6WHKckGOgPxO6x0fCDo).
 
@@ -381,7 +384,7 @@ FlashGBX can also be run in a local Python environment like so:
 
   * If your reproduction/bootleg cartridge has an SRAM memory chip but no battery, it was not designed for unmodified ROM files and you will need a “Batteryless SRAM” patch. It’s often a lost cause, but you can try the [GBA ROM Patcher website](https://www.gbarompatcher.com/).
 
-* If you use a GBxCart RW and it resets itself while connecting to some Game Boy cartridges, this can be caused by a GBxCart RW hardware issue. As a workaround, try hotplugging the cartridge: Disable the “Automatic cartridge power off” setting, then Connect → Game Boy → *Insert Cartridge* → Refresh.
+* If you use a GBxCart RW and it resets itself while connecting to some Game Boy cartridges, this can be caused by a GBxCart RW hardware issue. As a workaround, try hotplugging the cartridge: Disable the “Automatic cartridge power off” setting, then click Connect → Game Boy → *Insert Cartridge* → Refresh.
 
 ## Miscellaneous
 
@@ -389,17 +392,19 @@ FlashGBX can also be run in a local Python environment like so:
 
 * To write only the differences between two ROMs, name the original one `<name>.gba` and the edited one `<name>.delta.gba`.
 
+* Translating FlashGBX to another language is possible using the free [Poedit software](https://poedit.com/). Load the `messages.pot` file and save your translation as a `<lang>.po` file. Contributions and pull requests are welcome.
+
 ## Contributors
 
 The author would like to thank the following very kind people for their help, contributions or documentation (in alphabetical order):
 
-2358, 90sFlav, AcoVanConis, AdmirtheSableye, AlexiG, ALXCO-Hardware, AndehX, antPL, aronson, Ausar, bbsan, BennVenn, ccs21, chobby, ClassicOldSong, Cliffback, CodyWick13, Corborg, Cristóbal, crizzlycruz, Crystal, Därk, Davidish, delibird_deals, DevDavisNunez, Diddy_Kong, djedditt, Dr-InSide, dyf2007, easthighNerd, EchelonPrime, edo999, Eldram, Ell, EmperorOfTigers, endrift, Erba Verde, ethanstrax, eveningmoose, Falknör, FerrantePescara, frarees, Frost Clock, Gahr, gandalf1980, gboh, gekkio, Godan, Grender, HDR, Herax, Hiccup, hiks, howie0210, iamevn, Icesythe7, ide, infinest, inYourBackline, iyatemu, Jayro, Jenetrix, JFox, joyrider3774, jrharbort, JS7457, julgr, Kaede, kane159, KOOORAY, kscheel, kyokohunter, Leitplanke, litlemoran, LovelyA72, Lu, Luca DS, LucentW, luxkiller65, manuelcm1, marv17, Merkin, metroid-maniac, Mr_V, Mufsta, olDirdey, orangeglo, paarongiroux, Paradoxical, Pese, Rairch, Raphaël BOICHOT, redalchemy, RetroGorek, RevZ, RibShark, s1cp, Satumox, Sgt.DoudouMiel, SH, Shinichi999, Sillyhatday, simonK, Sithdown, skite2001, Smelly-Ghost, Sonikks, Squiddy, Stitch, Super Maker, t5b6_de, Tauwasser, TheNFCookie, Timville, twitnic, velipso, Veund, voltagex, Voultar, Warez Waldo, wickawack, Winter1760, Wkr, x7l7j8cc, xactoes, xukkorz, yosoo, Zeii, Zelante, zipplet, Zoo, zvxr
+2358, 90sFlav, AcoVanConis, AdmirtheSableye, AlexiG, ALXCO-Hardware, AndehX, antPL, aronson, Ausar, bbsan, BennVenn, Boeuffy, CaptainBean, ccs21, chobby, ClassicOldSong, Cliffback, CodyWick13, Corborg, Cristóbal, crizzlycruz, Crystal, Därk, Davidish, delibird_deals, DevDavisNunez, Diddy_Kong, djedditt, Dr-InSide, Duckman, dyf2007, easthighNerd, EchelonPrime, edo999, Eldram, Eli, Ell, EmperorOfTigers, endrift, Erba Verde, ethanstrax, eveningmoose, Falknör, FerrantePescara, frarees, fredemmott, Frost Clock, Gahr, gandalf1980, gboh, gekkio, Godan, Goon, Grender, HDR, Herax, Hiccup, hiks, howie0210, iamevn, Icesythe7, ide, infinest, inYourBackline, iyatemu, Jayro, Jenetrix, JFox, joyrider3774, jrharbort, JS7457, julgr, Kaede, kane159, KOOORAY, kscheel, kyokohunter, Leitplanke, litlemoran, LovelyA72, Lu, Luca DS, LucentW, luxkiller65, manuelcm1, marv17, Merkin, metroid-maniac, Mr_V, Mufsta, numma_cway, olDirdey, orangeglo, paarongiroux, Paradoxical, Pese, Rairch, Raphaël BOICHOT, redalchemy, RetroGorek, RevZ, RibShark, s1cp, Satumox, Sgt.DoudouMiel, SH, Shinichi999, Sillyhatday, simonK, Sithdown, skite2001, Smelly-Ghost, Sonikks, Squiddy, Stitch, Super Maker, t5b6_de, Tauwasser, TheNFCookie, Timville, twitnic, velipso, Veund, voltagex, Voultar, Warez Waldo, wickawack, Winter1760, Wkr, x7l7j8cc, xactoes, xukkorz, yosoo, Zeii, Zelante, zipplet, Zoo, zvxr
 
 Thanks to the No-Intro project for their game databases which FlashGBX’s databases are partly based on.
 
 ## Third Party Notices and Licenses
 
-Please view the <a href="https://github.com/Lesserkuma/FlashGBX/blob/master/Third%20Party%20Notices.md">Third Party Notices</a>.
+Please view the [Third Party Notices](https://github.com/Lesserkuma/FlashGBX/blob/master/Third%20Party%20Notices.md).
 
 ## DISCLAIMER
 

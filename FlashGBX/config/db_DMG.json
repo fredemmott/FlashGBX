@@ -17,6 +17,34 @@
   "lg": "En",
   "rg": "USA, Europe"
  },
+ "1cc731cd65a46746a033970126904aef29422608": {
+  "gn": "Asteroids",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 1456872941,
+  "rs": 262144,
+  "lg": "En",
+  "rg": "World"
+ },
+ "9c14b105c7569621d2b7736093d890a648095186": {
+  "gn": "Baby T-Rex",
+  "ne": "(World) (v1.1) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 3633142453,
+  "rs": 262144,
+  "rv": "v1.1",
+  "lg": "En",
+  "rg": "World"
+ },
+ "9dd58ea5e3cba2dc29608d827c36f355b8d0fe85": {
+  "gn": "Baby T-Rex",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 1184891328,
+  "rs": 262144,
+  "lg": "En",
+  "rg": "World"
+ },
  "c331c0bc8f7ea83fe6972524483f91d8be01f8b0": {
   "gn": "Back to Earth 3D",
   "ne": "(Europe) (Demo)",
@@ -35,6 +63,98 @@
   "lg": "En",
   "rg": "USA, Europe"
  },
+ "498baec72535178354c938fcb230c0c06b192542": {
+  "gn": "Blaster Master - Enemy Below",
+  "ne": "(USA, Europe) (SGB Enhanced) (GB Compatible)",
+  "gc": "DMG-AEHE",
+  "rc": 798089596,
+  "rs": 1048576,
+  "lg": "En",
+  "rg": "USA, Europe"
+ },
+ "6a4fc6d09be07f516af0cc3b6f024a2490eaccb3": {
+  "gn": "Blaster Master Boy",
+  "ne": "(USA)",
+  "gc": "DMG-BIE",
+  "rc": 992768280,
+  "rs": 131072,
+  "lg": "En",
+  "rg": "USA"
+ },
+ "d39a5154bb14de1269870ad132944aab8da3c506": {
+  "gn": "Brain Bender",
+  "ne": "(USA)",
+  "gc": "DMG-BWE",
+  "rc": 4222743201,
+  "rs": 32768,
+  "lg": "En",
+  "rg": "USA"
+ },
+ "0e03f8a0ec284a621220c753282316706857957b": {
+  "gn": "Centipede",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 2387754794,
+  "rs": 1048576,
+  "lg": "En",
+  "rg": "World"
+ },
+ "8b5ef84a0bb96307ebd230612582a95db7b9a488": {
+  "gn": "Chikyuu Kaihou Gun ZAS",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 3086339794,
+  "rs": 131072,
+  "lg": "En",
+  "rg": "World"
+ },
+ "8b8bc89e8e9084a7165f2c66ce8e02db8c575a49": {
+  "gn": "Conker's Pocket Tales",
+  "ne": "(USA, Europe) (En,Fr,De) (SGB Enhanced) (GB Compatible)",
+  "gc": "DMG-ACRE",
+  "rc": 2769021352,
+  "rs": 2097152,
+  "lg": "En,Fr,De",
+  "rg": "USA, Europe"
+ },
+ "86adc4cfdc54ad39017e07257520e1eddeef85d4": {
+  "gn": "Croc - 25th Anniversary Edition",
+  "ne": "(World) (v1.1) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 3471373794,
+  "rs": 1048576,
+  "rv": "v1.1",
+  "lg": "En",
+  "rg": "World"
+ },
+ "87e793d0599a41fa1b1267e7788a24db7c5581a9": {
+  "gn": "Croc - 25th Anniversary Edition",
+  "ne": "(World) (v1.2) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 2306953673,
+  "rs": 1048576,
+  "rv": "v1.2",
+  "lg": "En",
+  "rg": "World"
+ },
+ "cfa43e06566ea4b60597c69d23764ec379bc7e3b": {
+  "gn": "Croc - 25th Anniversary Edition",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 2427763028,
+  "rs": 1048576,
+  "lg": "En",
+  "rg": "World"
+ },
+ "32992b733ac1ffe15556686b0fae42b8de4c4765": {
+  "gn": "Croc 2",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 4093802877,
+  "rs": 1048576,
+  "lg": "En",
+  "rg": "World"
+ },
  "aeecc966a0c91d3c3bc133aaaa5aa90fb7a71931": {
   "gn": "David Crane's The Rescue of Princess Blobette",
   "ne": "(USA)",
@@ -43,6 +163,33 @@
   "rs": 65536,
   "lg": "En",
   "rg": "USA"
+ },
+ "a895a045d756896edfa3993072f3d2622bdf2aa0": {
+  "gn": "Double Dragon",
+  "ne": "(USA, Europe)",
+  "gc": "DMG-DDE",
+  "rc": 1084800786,
+  "rs": 131072,
+  "lg": "En",
+  "rg": "USA, Europe"
+ },
+ "df8371c2b88464ef794eae1549b184403609491b": {
+  "gn": "Dragon's Lair - The Legend",
+  "ne": "(World) (Incube8 Games)",
+  "gc": "",
+  "rc": 67650497,
+  "rs": 131072,
+  "lg": "En",
+  "rg": "World"
+ },
+ "618d850a659e076a3f5e23616c303f90a2dc206e": {
+  "gn": "Fidgetts, The",
+  "ne": "(USA, Europe) (En,Fr,De,Es,It,Nl,Sv)",
+  "gc": "DMG-F6X",
+  "rc": 3019718198,
+  "rs": 262144,
+  "lg": "En,Fr,De,Es,It,Nl,Sv",
+  "rg": "USA, Europe"
  },
  "6a0ab660fd111c6b6ca75171f858d9570bf11e0c": {
   "gn": "Game Boy Aging Cartridge",
@@ -89,6 +236,43 @@
   "rs": 262144,
   "lg": "En",
   "rg": "USA"
+ },
+ "93fa479b7c2b6852f0b426d56144dddd28b6caa1": {
+  "gn": "Infinity",
+  "ne": "(World) (Incube8 Games)",
+  "gc": "",
+  "rc": 4066071200,
+  "rs": 4194304,
+  "lg": "En",
+  "rg": "World"
+ },
+ "fa2f63178b098c07c19b403826e52749d0f3a25e": {
+  "gn": "Infinity",
+  "ne": "(World) (v1.1) (Incube8 Games)",
+  "gc": "",
+  "rc": 1938083788,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "En",
+  "rg": "World"
+ },
+ "6a8c80a3690e523f13f3b12eea5624fbfc1f7069": {
+  "gn": "Jurassic Park",
+  "ne": "(World) (Limited Run Games)",
+  "gc": "",
+  "rc": 6184511,
+  "rs": 262144,
+  "lg": "En",
+  "rg": "World"
+ },
+ "b8e69be7d54da33caffc7d15bc4eef45dee16bef": {
+  "gn": "Jurassic Park Part 2 - The Chaos Continues",
+  "ne": "(World) (En,Fr,De,It) (Limited Run Games)",
+  "gc": "",
+  "rc": 157039943,
+  "rs": 262144,
+  "lg": "En,Fr,De,It",
+  "rg": "World"
  },
  "416b7bca4177f71b42523d2471de03231c2b31bb": {
   "gn": "Koudai Guaishou - Da Jihe",
@@ -224,6 +408,42 @@
   "lg": "En",
   "rg": "Europe"
  },
+ "b63995888f0c806f3b15c7889b14634abfb0a43d": {
+  "gn": "Pri Pri - Primitive Princess!",
+  "ne": "(Japan) (En)",
+  "gc": "DMG-P2A",
+  "rc": 1440363797,
+  "rs": 65536,
+  "lg": "En",
+  "rg": "Japan"
+ },
+ "2d52aa448ad1aa0db197b4f58c31408db576d12d": {
+  "gn": "Project S-11",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 3990825251,
+  "rs": 524288,
+  "lg": "En",
+  "rg": "World"
+ },
+ "ed22661c4bdf754c1251a05953ad9fd6263c0d8c": {
+  "gn": "R-Type DX",
+  "ne": "(Japan) (En) (GB Compatible)",
+  "gc": "DMG-ARUJ",
+  "rc": 908323766,
+  "rs": 1048576,
+  "lg": "En",
+  "rg": "Japan"
+ },
+ "60ff59e7bd97aae7c414ed87e26e0754e11212d1": {
+  "gn": "Rayman",
+  "ne": "(World) (En,Fr,De,Es,It,Nl) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 3917971863,
+  "rs": 4194304,
+  "lg": "En,Fr,De,Es,It,Nl",
+  "rg": "World"
+ },
  "9d7f891afb2ae348529f4316af085b6f672f9c98": {
   "gn": "Resident Evil",
   "ne": "(Unknown) (Demo) (Climax Entertainment)",
@@ -279,6 +499,15 @@
   "lg": "En",
   "rg": "World"
  },
+ "8d64eb101fb6d0064525e482e3e1efa407f0d0f8": {
+  "gn": "Sagaia",
+  "ne": "(Japan) (En)",
+  "gc": "DMG-S8A",
+  "rc": 3829244048,
+  "rs": 131072,
+  "lg": "En",
+  "rg": "Japan"
+ },
  "81fc6bc03e7e094ba544d8d9c1f684271939865b": {
   "gn": "Shantae",
   "ne": "(World) (GBA Enhanced) (Switch)",
@@ -306,6 +535,24 @@
   "lg": "Ja",
   "rg": "Japan"
  },
+ "09d9fa006127de8e8e754313a22ce3eba4ece2d5": {
+  "gn": "Snow Bros. Jr.",
+  "ne": "(World) (En) (Limited Run Games)",
+  "gc": "",
+  "rc": 4195576389,
+  "rs": 262144,
+  "lg": "En",
+  "rg": "World"
+ },
+ "8519f60e5f38bb2b589a10810d6ec98f5f5da1d5": {
+  "gn": "Snow Bros. Jr.",
+  "ne": "(Japan)",
+  "gc": "DMG-SJJ",
+  "rc": 3852611418,
+  "rs": 131072,
+  "lg": "Ja",
+  "rg": "Japan"
+ },
  "dce835d67fef8a41d4c18a2578c4615391149326": {
   "gn": "Sonic 6",
   "ne": "(USA) (Pirate)",
@@ -314,6 +561,15 @@
   "rs": 524288,
   "lg": "En",
   "rg": "USA"
+ },
+ "53bd3b9892301e5278bbbcc8d09cef85e42729e1": {
+  "gn": "Spider-Man - X-Men - Arcade's Revenge",
+  "ne": "(USA, Europe)",
+  "gc": "DMG-XGE",
+  "rc": 269076160,
+  "rs": 131072,
+  "lg": "En",
+  "rg": "USA, Europe"
  },
  "f54f7d5b6f58a97258a54f98cabce7ab3af4de7b": {
   "gn": "Star Wars",
@@ -339,6 +595,15 @@
   "gc": "",
   "rc": 14307554,
   "rs": 131072,
+  "lg": "En",
+  "rg": "World"
+ },
+ "35f086841f4c32e2f9d011e2c14bffdbd6c8c639": {
+  "gn": "Super Breakout",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 984853071,
+  "rs": 262144,
   "lg": "En",
   "rg": "World"
  },
@@ -377,6 +642,15 @@
   "rs": 1048576,
   "lg": "En,Fr,De,Es,It",
   "rg": "Europe"
+ },
+ "f2d57383dacc57fe6432f452a4fc7bbf3993c6f2": {
+  "gn": "Toki Tori - Ultimate Edition",
+  "ne": "(World) (ModRetro Chromatic)",
+  "gc": "",
+  "rc": 937434022,
+  "rs": 1048576,
+  "lg": "En",
+  "rg": "World"
  },
  "c903c536b978c90fad801456a2e28b7a9ac74c05": {
   "gn": "Trip World",
@@ -449,6 +723,597 @@
   "rs": 4194304,
   "lg": "En",
   "rg": "USA"
+ },
+ "f99f0072316cd4fe79601661d83c6dafadf4e867": {
+  "gn": "Yu-Gi-Oh! - Das Dunkle Duell",
+  "ne": "(World) (De) (Early Days Collection)",
+  "gc": "",
+  "rc": 996725608,
+  "rs": 4194304,
+  "lg": "De",
+  "rg": "World"
+ },
+ "0c57692fdffae9e9eec8c92ad781929d39f798c7": {
+  "gn": "Yu-Gi-Oh! - Duel des Tenebres",
+  "ne": "(World) (Fr) (Early Days Collection)",
+  "gc": "",
+  "rc": 604126418,
+  "rs": 4194304,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "c6952b726d9bfe8ba9843cfb3c5ed163d6cc243e": {
+  "gn": "Yu-Gi-Oh! - Duelo en las Tinieblas",
+  "ne": "(World) (Es) (Early Days Collection)",
+  "gc": "",
+  "rc": 1890634952,
+  "rs": 4194304,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "0a650d932e17781e934b942feb454dc96ba0bfd6": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (It) (v1.1) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 2539460114,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "It",
+  "rg": "World"
+ },
+ "1854ec96c7b7c5e7d0d98e16b662616267e7c9e5": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 2283376055,
+  "rs": 2097152,
+  "lg": "En",
+  "rg": "World"
+ },
+ "3429c81a6a6f9a5819c23c5a505777bd5073dab7": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (De) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 343670120,
+  "rs": 2097152,
+  "lg": "De",
+  "rg": "World"
+ },
+ "3e415c3e04aaf9c519d1587c42b19fa6f156de43": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (Fr) (v1.1) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 2398226873,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "9e3bef782073c4b515e3a2273743089bfdb181f4": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (Es) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 2278012090,
+  "rs": 2097152,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "ba47c973ecfe4efac7a5744ca844d25f0f62c3b2": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (It) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 2555859718,
+  "rs": 2097152,
+  "lg": "It",
+  "rg": "World"
+ },
+ "bfe1022358e3eccaf4f7374786786a4c2e0404f4": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (Ja) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 2441606519,
+  "rs": 1048576,
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "d76d89d023d52fc9614bf8a540ad65adfe925ecd": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (Fr) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 4231629467,
+  "rs": 2097152,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "dac38ac29b900f407c36449b6c2ea8707f50542d": {
+  "gn": "Yu-Gi-Oh! - Monster Capsule GB",
+  "ne": "(World) (De) (v1.1) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 3387078163,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "De",
+  "rg": "World"
+ },
+ "1024dbb95566f3d2d067d1ffd51a0e6f00fa51be": {
+  "gn": "Yu-Gi-Oh! - Racconti Oscuri",
+  "ne": "(World) (It) (Early Days Collection)",
+  "gc": "",
+  "rc": 1250476067,
+  "rs": 4194304,
+  "lg": "It",
+  "rg": "World"
+ },
+ "11b0aa0690730c3896f54dcb8213f9c9f2631999": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (Fr) (v1.1) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 448222280,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "44545a50203284ad635f4fbb9c29806036d5babb": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (Es) (v1.1) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 931464788,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "Es",
+  "rg": "World"
+ },
+ "59d3e207898f7aee5afedd1be57971a015c63880": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (It) (v1.1) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 1070918722,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "It",
+  "rg": "World"
+ },
+ "5afb6fb37b225df6937d05c66246380bbd634b09": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (De) (v1.1) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 1978943191,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "De",
+  "rg": "World"
+ },
+ "790e601d14271794799d5853455da881a8c61e2f": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (Fr) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 1915043242,
+  "rs": 2097152,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "8df2b2e93f258f62606fa4a28946634c0e83622d": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (De) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 24502462,
+  "rs": 2097152,
+  "lg": "De",
+  "rg": "World"
+ },
+ "ab74903db79890d63a931db773c65d0c1e3f9ad8": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 1865155446,
+  "rs": 2097152,
+  "lg": "En",
+  "rg": "World"
+ },
+ "c606e9c8d6fd43281c8f94259628248340168140": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (Es) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 2367727316,
+  "rs": 2097152,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "cc84bcf4e9dc308e0faebcb39d96e8587f6ee430": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (v1.1) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 388162994,
+  "rs": 2097152,
+  "rv": "v1.1",
+  "lg": "En",
+  "rg": "World"
+ },
+ "dae2a9c656ff6d3b6250ffffd04f13b802e52a11": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (It) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 2322575009,
+  "rs": 2097152,
+  "lg": "It",
+  "rg": "World"
+ },
+ "e444b7b5d9873ae29cb6de7d3c0ce64a27d42b5e": {
+  "gn": "Yu-Gi-Oh! Duel Monsters",
+  "ne": "(World) (Ja) (Early Days Collection) (SGB Enhanced)",
+  "gc": "",
+  "rc": 1705204453,
+  "rs": 2097152,
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "696b9e0e28d184836e0eb5d234eaae578e7a63d4": {
+  "gn": "Yu-Gi-Oh! Duel Monsters - Dark Duel Stories",
+  "ne": "(World) (Early Days Collection)",
+  "gc": "",
+  "rc": 3408469978,
+  "rs": 4194304,
+  "lg": "En",
+  "rg": "World"
+ },
+ "cb48e4831aa41e9b1d8471700ac0c028b9beb265": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Batalla del Gran Duelista - Deck de Joey",
+  "ne": "(World) (Es) (Early Days Collection)",
+  "gc": "",
+  "rc": 2987509396,
+  "rs": 4194304,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "e46ded30c46e202496647b5dca919a5e5c5e0c67": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Batalla del Gran Duelista - Deck de Joey",
+  "ne": "(World) (Es) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 1300389736,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Es",
+  "rg": "World"
+ },
+ "0523104dcf05a4b45184be1db972a15b01055f99": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Batalla del Gran Duelista - Deck de Kaiba",
+  "ne": "(World) (Es) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 2939582361,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Es",
+  "rg": "World"
+ },
+ "6830557289bb7b361b41f9b899718ecb71caccf6": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Batalla del Gran Duelista - Deck de Kaiba",
+  "ne": "(World) (Es) (Early Days Collection)",
+  "gc": "",
+  "rc": 559284247,
+  "rs": 4194304,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "779c1ecea67d83c78baf9e1ee11c4816678e9941": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Batalla del Gran Duelista - Deck de Yugi",
+  "ne": "(World) (Es) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 2142788544,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Es",
+  "rg": "World"
+ },
+ "a2c99a0efacc3e9fac252f1c864b023d2a824899": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Batalla del Gran Duelista - Deck de Yugi",
+  "ne": "(World) (Es) (Early Days Collection)",
+  "gc": "",
+  "rc": 3268905447,
+  "rs": 4194304,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "93a6b0b8d3bc09d0e6bd4aa0a9dd5b8b5f1e4550": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Deck di Joey",
+  "ne": "(World) (It) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 4292042379,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "It",
+  "rg": "World"
+ },
+ "ebf37909a5e9d5fd862892156eb0c698015d0be1": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Deck di Joey",
+  "ne": "(World) (It) (Early Days Collection)",
+  "gc": "",
+  "rc": 1444676200,
+  "rs": 4194304,
+  "lg": "It",
+  "rg": "World"
+ },
+ "0aaad7818cf8f0b1c3a144b6edd4d2cd24de80a6": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Deck di Kaiba",
+  "ne": "(World) (It) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 1373837449,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "It",
+  "rg": "World"
+ },
+ "7bcdaee7c04189225288cbc1d02eaab2c985bc30": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Deck di Kaiba",
+  "ne": "(World) (It) (Early Days Collection)",
+  "gc": "",
+  "rc": 1524110830,
+  "rs": 4194304,
+  "lg": "It",
+  "rg": "World"
+ },
+ "727edeb12fb9f1355afc69b86f1841df460edef9": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Deck di Yugi",
+  "ne": "(World) (It) (Early Days Collection)",
+  "gc": "",
+  "rc": 3752497976,
+  "rs": 4194304,
+  "lg": "It",
+  "rg": "World"
+ },
+ "fab0b190522fedbc081dca676ff32e1f0c71b9a7": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Deck di Yugi",
+  "ne": "(World) (It) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 3518637041,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "It",
+  "rg": "World"
+ },
+ "096be0ed2db191f511c0c70211aa2c7ed54a0b57": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Joey Deck",
+  "ne": "(World) (Early Days Collection)",
+  "gc": "",
+  "rc": 1241061754,
+  "rs": 4194304,
+  "lg": "En",
+  "rg": "World"
+ },
+ "ea980d847f48ad06e52afdc6373de0721cb206a6": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Jounouchi Deck",
+  "ne": "(World) (Ja) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 3825122139,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "5643d5f087d299f95b5dc4c611dca6a2e0215677": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Kaiba Deck",
+  "ne": "(World) (Ja) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 2801961340,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "8e0b1953b243786a35c236db171ca5a94d8b545c": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Kaiba Deck",
+  "ne": "(World) (Early Days Collection)",
+  "gc": "",
+  "rc": 2932502921,
+  "rs": 4194304,
+  "lg": "En",
+  "rg": "World"
+ },
+ "5a0955962800080eb9b7b2904acdf7c3a95863ed": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Yugi Deck",
+  "ne": "(World) (Early Days Collection)",
+  "gc": "",
+  "rc": 2282993445,
+  "rs": 4194304,
+  "lg": "En",
+  "rg": "World"
+ },
+ "a27ceba322d86780cca314116e1034fc66d8db3c": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Battle of Great Duelist - Yuugi Deck",
+  "ne": "(World) (Ja) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 711477780,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "bc347f183604bdbf7bf87e7e6a233400aea4565b": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Combat de Grand Duelliste - Deck Joey",
+  "ne": "(World) (Fr) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 1923518190,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "f0c0814857d952df247a9fa777c9d71957cc0bb0": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Combat de Grand Duelliste - Deck Joey",
+  "ne": "(World) (Fr) (Early Days Collection)",
+  "gc": "",
+  "rc": 797351157,
+  "rs": 4194304,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "262eaf90298f6417b7b4af7da45bae21eee2220a": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Combat de Grand Duelliste - Deck Kaiba",
+  "ne": "(World) (Fr) (Early Days Collection)",
+  "gc": "",
+  "rc": 2681577986,
+  "rs": 4194304,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "7ec1153c904b45fc9cfd844bc4192d9d33645fc2": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Combat de Grand Duelliste - Deck Kaiba",
+  "ne": "(World) (Fr) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 1157421750,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "b621a1cf9818b5fd33a5a30103a333451c1319b7": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Combat de Grand Duelliste - Deck Yugi",
+  "ne": "(World) (Fr) (Early Days Collection)",
+  "gc": "",
+  "rc": 1303056919,
+  "rs": 4194304,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "f58b7eede618b8aecd51ae77d6a79e6b16ffa624": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Combat de Grand Duelliste - Deck Yugi",
+  "ne": "(World) (Fr) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 3562850899,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "007cea5d5de9a4f45cb1eeddb89039815c5a3949": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Kampf der grossen Duellanten - Joey-Deck",
+  "ne": "(World) (De) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 2575190112,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "De",
+  "rg": "World"
+ },
+ "64bda753334eacf703e2c85a38e18b41e80d39e8": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Kampf der grossen Duellanten - Joey-Deck",
+  "ne": "(World) (De) (Early Days Collection)",
+  "gc": "",
+  "rc": 501294492,
+  "rs": 4194304,
+  "lg": "De",
+  "rg": "World"
+ },
+ "8cde15579d82e90cb88bf00682026b6faa491001": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Kampf der grossen Duellanten - Kaiba-Deck",
+  "ne": "(World) (De) (Early Days Collection)",
+  "gc": "",
+  "rc": 2795977527,
+  "rs": 4194304,
+  "lg": "De",
+  "rg": "World"
+ },
+ "ae7e2eaf07b76c0a09ca555f401be7ee5750a447": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Kampf der grossen Duellanten - Kaiba-Deck",
+  "ne": "(World) (De) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 4006080441,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "De",
+  "rg": "World"
+ },
+ "8341d4b12810ad37d5f0087bf421818738603cd8": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Kampf der grossen Duellanten - Yugi-Deck",
+  "ne": "(World) (De) (Early Days Collection)",
+  "gc": "",
+  "rc": 1233326917,
+  "rs": 4194304,
+  "lg": "De",
+  "rg": "World"
+ },
+ "ffa62af1d8817da5d20bd9b90dccb0f13695eab6": {
+  "gn": "Yu-Gi-Oh! Duel Monsters 4 - Kampf der grossen Duellanten - Yugi-Deck",
+  "ne": "(World) (De) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 3446372397,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "De",
+  "rg": "World"
+ },
+ "0edb4292441a572d87c0d442efd8fd94a4d5bb2b": {
+  "gn": "Yu-Gi-Oh! Duel Monsters II - Dark Duel Stories",
+  "ne": "(World) (Ja) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 1248161895,
+  "rs": 4194304,
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "9fb42a42e8ab9709e82bfb0e35c917599cf85280": {
+  "gn": "Yu-Gi-Oh! Duel Monsters II - Dark Duel Stories",
+  "ne": "(World) (De) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 3843355324,
+  "rs": 4194304,
+  "lg": "De",
+  "rg": "World"
+ },
+ "a44a4ebdeb05ce6a061bc8c181cb751e17046952": {
+  "gn": "Yu-Gi-Oh! Duel Monsters II - Dark Duel Stories",
+  "ne": "(World) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 1784443903,
+  "rs": 4194304,
+  "lg": "En",
+  "rg": "World"
+ },
+ "dc0232a6b1bec75c9e9ddb825dd2830ceda8a40c": {
+  "gn": "Yu-Gi-Oh! Duel Monsters II - Dark Duel Stories",
+  "ne": "(World) (Es) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 840273412,
+  "rs": 4194304,
+  "lg": "Es",
+  "rg": "World"
+ },
+ "e6c6bc18844af6da504a87e1840624cc3a116930": {
+  "gn": "Yu-Gi-Oh! Duel Monsters II - Dark Duel Stories",
+  "ne": "(World) (It) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 819653819,
+  "rs": 4194304,
+  "lg": "It",
+  "rg": "World"
+ },
+ "f230d8445d6d0e7f0bc7100971e500fb717fb49e": {
+  "gn": "Yu-Gi-Oh! Duel Monsters II - Dark Duel Stories",
+  "ne": "(World) (Fr) (Early Days Collection) (SGB Enhanced) (GB Compatible)",
+  "gc": "",
+  "rc": 3606362634,
+  "rs": 4194304,
+  "lg": "Fr",
+  "rg": "World"
+ },
+ "57fba936263ad312830b10eb89b0ae77d6dfa9d2": {
+  "gn": "Yu-Gi-Oh! Duel Monsters III - Tri Holy God Advent",
+  "ne": "(World) (Ja) (v1.1) (Early Days Collection)",
+  "gc": "",
+  "rc": 832173812,
+  "rs": 4194304,
+  "rv": "v1.1",
+  "lg": "Ja",
+  "rg": "World"
+ },
+ "70736f8586d6ced05ee773e9388101e55c4c5f03": {
+  "gn": "Yu-Gi-Oh! Duel Monsters III - Tri Holy God Advent",
+  "ne": "(World) (Ja) (Early Days Collection)",
+  "gc": "",
+  "rc": 164642530,
+  "rs": 4194304,
+  "lg": "Ja",
+  "rg": "World"
  },
  "affa8b29cfe1addebb6b436566dc5eeb4fce04e3": {
   "gn": "Zelda no Densetsu - Yume o Miru Shima",
@@ -1727,7 +2592,7 @@
   "rg": "Japan"
  },
  "ba21301ecd0edce1ae66c43ea573eb0b6468ffed": {
-  "gn": "Soreike! Anpanman - Fushigi na Nikoniko Album",
+  "gn": "Soreike! Anpanman - Fushigina Nikoniko Album",
   "ne": "(Japan) (SGB Enhanced) (GB Compatible)",
   "gc": "DMG-AANJ",
   "rc": 2819550893,
@@ -2585,15 +3450,6 @@
   "lg": "Ja",
   "rg": "Japan"
  },
- "8b8bc89e8e9084a7165f2c66ce8e02db8c575a49": {
-  "gn": "Conker's Pocket Tales",
-  "ne": "(USA, Europe) (En,Fr,De) (SGB Enhanced) (GB Compatible)",
-  "gc": "DMG-ACRE",
-  "rc": 2769021352,
-  "rs": 2097152,
-  "lg": "En,Fr,De",
-  "rg": "USA, Europe"
- },
  "8a04c460e4a8efe4ca486d04e5e6641705b8c13e": {
   "gn": "Contra - The Alien Wars",
   "ne": "(USA) (SGB Enhanced)",
@@ -3234,15 +4090,6 @@
   "rs": 2097152,
   "lg": "Ja",
   "rg": "Japan"
- },
- "498baec72535178354c938fcb230c0c06b192542": {
-  "gn": "Blaster Master - Enemy Below",
-  "ne": "(USA, Europe) (SGB Enhanced) (GB Compatible)",
-  "gc": "DMG-AEHE",
-  "rc": 798089596,
-  "rs": 1048576,
-  "lg": "En",
-  "rg": "USA, Europe"
  },
  "8cf8acbe7cfd674747d48ac9e8796d691cf805f4": {
   "gn": "Kawaii Pet Shop Monogatari",
@@ -6694,7 +7541,7 @@
   "rg": "Japan"
  },
  "37cee5cc9280de8be4d1892c1fa2be6aed2c1902": {
-  "gn": "Super Breakout!",
+  "gn": "Super Breakout",
   "ne": "(USA) (GB Compatible)",
   "gc": "DMG-AOTE",
   "rc": 1391795381,
@@ -6703,7 +7550,7 @@
   "rg": "USA"
  },
  "266495d18ce90909925566ae128319725b49f931": {
-  "gn": "Super Breakout!",
+  "gn": "Super Breakout",
   "ne": "(Europe) (En,Fr,De,Es,It,Nl) (GB Compatible)",
   "gc": "DMG-AOTP",
   "rc": 1748210237,
@@ -7943,15 +8790,6 @@
   "rc": 2239447065,
   "rs": 1048576,
   "lg": "Ja",
-  "rg": "Japan"
- },
- "ed22661c4bdf754c1251a05953ad9fd6263c0d8c": {
-  "gn": "R-Type DX",
-  "ne": "(Japan) (En) (GB Compatible)",
-  "gc": "DMG-ARUJ",
-  "rc": 908323766,
-  "rs": 1048576,
-  "lg": "En",
   "rg": "Japan"
  },
  "f86f6bdd68791a2e44bd5cfa64ce1433d48d796c": {
@@ -13964,15 +14802,6 @@
   "lg": "En,Fr,De,Es,It,Nl",
   "rg": "Europe"
  },
- "6a4fc6d09be07f516af0cc3b6f024a2490eaccb3": {
-  "gn": "Blaster Master Boy",
-  "ne": "(USA)",
-  "gc": "DMG-BIE",
-  "rc": 992768280,
-  "rs": 131072,
-  "lg": "En",
-  "rg": "USA"
- },
  "08744bcc5e5bd336aa17296e76fc81abf3622c72": {
   "gn": "Inspector Gadget - Operation Madkactus",
   "ne": "(USA)",
@@ -16050,7 +16879,7 @@
   "rg": "USA"
  },
  "93426e57634ee32fab666588d6feb477e60c78ff": {
-  "gn": "Dragon Quest Monsters 2 - Maruta no Fushigi na Kagi - Iru no Bouken",
+  "gn": "Dragon Quest Monsters 2 - Maruta no Fushigina Kagi - Iru no Bouken",
   "ne": "(Japan) (SGB Enhanced) (GB Compatible)",
   "gc": "DMG-BQIJ",
   "rc": 1757026519,
@@ -16068,7 +16897,7 @@
   "rg": "USA"
  },
  "112d1edb7b402b7c230aa074bb7b589d707398aa": {
-  "gn": "Dragon Quest Monsters 2 - Maruta no Fushigi na Kagi - Ruka no Tabidachi",
+  "gn": "Dragon Quest Monsters 2 - Maruta no Fushigina Kagi - Ruka no Tabidachi",
   "ne": "(Japan) (Rev 1) (SGB Enhanced) (GB Compatible)",
   "gc": "DMG-BQLJ",
   "rc": 1688112535,
@@ -16078,7 +16907,7 @@
   "rg": "Japan"
  },
  "b15e0ea6a86c5b70e4d0e5bf7f5c9cc019d97062": {
-  "gn": "Dragon Quest Monsters 2 - Maruta no Fushigi na Kagi - Ruka no Tabidachi",
+  "gn": "Dragon Quest Monsters 2 - Maruta no Fushigina Kagi - Ruka no Tabidachi",
   "ne": "(Japan) (SGB Enhanced) (GB Compatible)",
   "gc": "DMG-BQLJ",
   "rc": 742558343,
@@ -17592,15 +18421,6 @@
   "lg": "Fr,De,Es",
   "rg": "Europe"
  },
- "d39a5154bb14de1269870ad132944aab8da3c506": {
-  "gn": "Brain Bender",
-  "ne": "(USA)",
-  "gc": "DMG-BWE",
-  "rc": 4222743201,
-  "rs": 32768,
-  "lg": "En",
-  "rg": "USA"
- },
  "f6ab2e49d69d832a57af6efbabc60f4fcb043e25": {
   "gn": "WWF Betrayal",
   "ne": "(USA, Europe)",
@@ -18883,15 +19703,6 @@
   "lg": "En",
   "rg": "Japan"
  },
- "a895a045d756896edfa3993072f3d2622bdf2aa0": {
-  "gn": "Double Dragon",
-  "ne": "(USA, Europe)",
-  "gc": "DMG-DDE",
-  "rc": 1084800786,
-  "rs": 131072,
-  "lg": "En",
-  "rg": "USA, Europe"
- },
  "8213873d33ce9bc44a2b1baf7575808010c57303": {
   "gn": "Doraemon - Taiketsu HimitsuDougu!!",
   "ne": "(Japan)",
@@ -19579,15 +20390,6 @@
   "rs": 262144,
   "lg": "En",
   "rg": "Japan"
- },
- "618d850a659e076a3f5e23616c303f90a2dc206e": {
-  "gn": "Fidgetts, The",
-  "ne": "(USA, Europe) (En,Fr,De,Es,It,Nl,Sv)",
-  "gc": "DMG-F6X",
-  "rc": 3019718198,
-  "rs": 262144,
-  "lg": "En,Fr,De,Es,It,Nl,Sv",
-  "rg": "USA, Europe"
  },
  "f9ea8c72b5d80d9300ac46c042d3791a591488bf": {
   "gn": "Super Street Basketball",
@@ -23257,15 +24059,6 @@
   "lg": "En",
   "rg": "Europe"
  },
- "b63995888f0c806f3b15c7889b14634abfb0a43d": {
-  "gn": "Pri Pri - Primitive Princess!",
-  "ne": "(Japan) (En)",
-  "gc": "DMG-P2A",
-  "rc": 1440363797,
-  "rs": 65536,
-  "lg": "En",
-  "rg": "Japan"
- },
  "7fa332b0497fcc31dfc9456ecd7757b24f17d0aa": {
   "gn": "A-mazing Tater",
   "ne": "(USA)",
@@ -23629,7 +24422,7 @@
   "rg": "Japan"
  },
  "d3870b93bbb314d3fa430e1fa5a0a56cf621cda0": {
-  "gn": "Fushigi na Blobby - Princess Blob o Sukue!",
+  "gn": "Fushigina Blobby - Princess Blob o Sukue!",
   "ne": "(Japan)",
   "gc": "DMG-PSJ",
   "rc": 1024175120,
@@ -24577,15 +25370,6 @@
   "lg": "Ja",
   "rg": "Japan"
  },
- "8d64eb101fb6d0064525e482e3e1efa407f0d0f8": {
-  "gn": "Sagaia",
-  "ne": "(Japan) (En)",
-  "gc": "DMG-S8A",
-  "rc": 3829244048,
-  "rs": 131072,
-  "lg": "En",
-  "rg": "Japan"
- },
  "a192ba6931406b93150ddbfd4ebc7de914b53262": {
   "gn": "Soldam",
   "ne": "(Japan)",
@@ -24793,15 +25577,6 @@
   "rs": 131072,
   "lg": "En",
   "rg": "USA"
- },
- "8519f60e5f38bb2b589a10810d6ec98f5f5da1d5": {
-  "gn": "Snow Bros. Jr.",
-  "ne": "(Japan)",
-  "gc": "DMG-SJJ",
-  "rc": 3852611418,
-  "rs": 131072,
-  "lg": "Ja",
-  "rg": "Japan"
  },
  "358f54966359022192bcc95fd457b3912f97c23d": {
   "gn": "Snow Brothers",
@@ -26943,15 +27718,6 @@
   "rs": 524288,
   "lg": "Ja",
   "rg": "Japan"
- },
- "53bd3b9892301e5278bbbcc8d09cef85e42729e1": {
-  "gn": "Spider-Man - X-Men - Arcade's Revenge",
-  "ne": "(USA, Europe)",
-  "gc": "DMG-XGE",
-  "rc": 269076160,
-  "rs": 131072,
-  "lg": "En",
-  "rg": "USA, Europe"
  },
  "455d2bb27300c8e740d2fc85d4faad335195fc18": {
   "gn": "Toxic Crusaders",

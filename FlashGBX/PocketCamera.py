@@ -6,6 +6,7 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import os, hashlib, io, math
 import email.utils
+from .app import AppInfo
 
 class PocketCamera:
 	DATA = None
@@ -17,25 +18,29 @@ class PocketCamera:
 		[ 240, 240, 240,   220, 160, 160,   136, 78, 78,   30, 30, 30 ], # Game Boy Color (USA Gold)
 		[ 240, 240, 240,   134, 200, 100,   58, 96, 132,   30, 30, 30 ], # Game Boy Color (USA/EUR)
 	]
+	# CLI / argparse identifiers for PALETTES (parallel list, same order).
+	PALETTE_NAMES = ["grayscale", "dmg", "sgb", "cgb1", "cgb2", "cgb3"]
+	# Output file formats accepted by ExportPicture().
+	OUTPUT_FORMATS = ["png", "bmp", "gif", "jpg"]
 	PALETTE = [ 240, 240, 240,   218, 196, 106,   112, 88, 52,   30, 30, 30 ] # default
 	IMAGES = [None] * 32
 	IMAGES_DELETED = []
 	ORDER = None
-	
+
 	def __init__(self):
 		pass
-	
+
 	def LoadFile(self, savefile):
 		if isinstance(savefile, bytearray):
 			self.DATA = savefile
 		else:
 			if os.path.getsize(savefile) != 128*1024: return False
 			with open(savefile, "rb") as file: self.DATA = file.read()
-		
+
 		# if self.DATA[0x1FFB1:0x1FFB6] != b'Magic':
 		# 	self.DATA = None
 		# 	return False
-		
+
 		order_raw = self.DATA[0x11D7:0x11F5]
 		order = [None] * 30
 		deleted = []
@@ -46,39 +51,39 @@ class PocketCamera:
 			else:
 				order[order_raw[i]] = i
 			seen_indicies.append(order_raw[i])
-		
+
 		while None in order: order.remove(None)
 		order.extend(deleted)
 		self.ORDER = order
 		self.IMAGES_DELETED = deleted
-		
+
 		for i in range(0, 30):
 			self.IMAGES[i] = self.ExtractPicture(i)
 		self.IMAGES[30] = self.ExtractGameFace()
 		self.IMAGES[31] = self.ExtractLastSeen()
 		return True
-	
+
 	def SetPalette(self, palette):
 		if isinstance(palette, int):
 			palette = self.PALETTES[palette]
 		for p in range (0, len(self.IMAGES)):
 			self.IMAGES[p].putpalette(palette)
 		self.PALETTE = palette
-	
+
 	def GetPicture(self, index):
 		return self.IMAGES[index]
-	
+
 	def IsEmpty(self, index):
 		return (hashlib.sha1(self.IMAGES[index].tobytes()).digest() == b'\xefX\xa8\x12\xa8\x1a\xb1EI\xd8\xf4\xfb\x86\xe9\xec\xb5J_\xb7#')
-	
+
 	def IsDeleted(self, index):
 		index = self.ORDER[index]
 		return index in self.IMAGES_DELETED
-	
+
 	def ConvertPicture(self, buffer, lastseen=False):
 		tile_width = 16
 		tile_height = 14 if not lastseen else 16
-		
+
 		img = Image.new(mode='P', size=(128, 112 if not lastseen else 128))
 		img.putpalette(self.PALETTE)
 		pixels = img.load()
@@ -91,19 +96,19 @@ class PocketCamera:
 						hi = (tile[i * 2] >> (7 - j)) & 1
 						lo = (tile[i * 2 + 1] >> (7 - j)) & 1
 						pixels[(w * 8) + j, (h * 8) + i] = (lo << 1 | hi)
-		
+
 		return img.crop((0, 0, 128, 112 if not lastseen else 123))
-	
+
 	def ExtractGameFace(self):
 		offset = 0x11FC
 		imgbuffer = self.DATA[offset:offset+0x1000]
 		return self.ConvertPicture(imgbuffer)
-	
+
 	def ExtractLastSeen(self):
 		offset = 0
 		imgbuffer = self.DATA[offset:offset+0x1000]
 		return self.ConvertPicture(imgbuffer, lastseen=True)
-	
+
 	def ExtractPicture(self, index):
 		if index < 30:
 			index = self.ORDER[index]
@@ -114,12 +119,12 @@ class PocketCamera:
 			offset = 0
 		imgbuffer = self.DATA[offset:offset+0x1000]
 		return self.ConvertPicture(imgbuffer)
-	
+
 	def ExportPicture(self, index, path, scale=1.0, frame=False):
 		pnginfo = PngInfo()
-		pnginfo.add_text("Software", "FlashGBX")
+		pnginfo.add_text("Software", AppInfo.NAME)
 		pnginfo.add_text("Creation Time", email.utils.formatdate())
-		
+
 		if index == 30:
 			pic = self.GetPicture(30)
 			pnginfo.add_text("Title", "Game Face")
@@ -129,7 +134,7 @@ class PocketCamera:
 		else:
 			pic = self.GetPicture(index)
 			pnginfo.add_text("Title", "Photo {:02d}".format(index + 1))
-		
+
 		if frame is not False:
 			frame = Image.open(io.BytesIO(frame)).convert("RGB")
 			if frame.width >= 160 and frame.height >= 144:
@@ -137,7 +142,7 @@ class PocketCamera:
 				top = math.floor(frame.height / 2) - 56
 				frame.paste(pic, (left, top))
 				pic = frame
-		
+
 		pic = pic.resize((pic.width * scale, pic.height * scale), Image.Resampling.NEAREST)
 
 		ext = os.path.splitext(path)[1]

@@ -1,4 +1,22 @@
 # Release notes
+### v5.0/v5.0.1 (released 2026-06-06)
+- Added support for the [Game Bub](https://gamebub.net/) hardware device *(thanks Eli)*
+- Added a new launcher for the Windows pre-built package that hides the terminal window
+- Now supports gettext-style i18n localizations (see locale folder for the template)
+- Added a German language localization
+- Updated the FlashGBX LK Firmware to version L15
+- Added support for ModRetro Chromatic Cartridge with 39VF1682 *(thanks Jayro)*
+- Added an interactive console for manual debugging *(thanks numma_cway for the suggestion)*
+- Added a platform badge indicator in DMG mode to show what the inserted game was developed for
+- Now experimentally supports Batteryless SRAM save data backup and restore in CLI mode as well
+- Added support for ACAM_GL04G10_2G_204 with GL04GR00FHCR2 *(thanks CaptainBean)*
+- Added Dark Mode for Windows users *(thanks marv17 for the suggestion)*
+- Updated the Game Boy and Game Boy Advance lookup databases for save types, ROM sizes and checksums
+- Added an option to force-disable dark mode via settings.ini `AllowDarkMode`
+- Fixed an issue with the Interactive Console (the `ws` command did not work) *(thanks Goon)*
+- Fixed an issue with some GBxCart RW devices not being able to read save data correctly *(thanks Boeuffy)*
+- Lots of minor improvements and bug fixes
+
 ### v4.6 (released 2026-01-27)
 - Added support for a new Game Boy Advance bootleg flash save chip (SST39VF6401B) used on “Quetzal” bootlegs *(thanks Grender, marv17, Pese)*
 - Added support for Gamebank-web DMG-29W-04 with M29W320DB
@@ -341,7 +359,7 @@
 - Added support for 100SOP with MSP55LV100S *(thanks Jayro)*
 
 ### v3.5 (released 2022-02-14)
-- Fixed a bug related to the 100BS6600_48BALL_V4 with 6600M0U0BE cartridge when using the Detect Flash Cart button *(thanks to redalchemy)*
+- Fixed a bug related to the 100BS6600_48BALL_V4 with 6600M0U0BE cartridge when using the Detect Flash Cart button *(thanks redalchemy)*
 - Fixed a bug with the full chip erase feature via sector erase mode
 - When reading save data from a Game Boy Camera or Pocket Camera cartridge via custom command line switches, you will no longer be asked if you’d also like to extract pictures. This is to make it easier to use FlashGBX for scripting. You can still use `--action gbcamera-extract` to extract pictures in a second step, or use the interactive mode.
 

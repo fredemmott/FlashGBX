@@ -1,0 +1,24 @@
+#include <windows.h>
+A ICON "FlashGBX_Launcher.ico"
+1 RT_MANIFEST "FlashGBX_Launcher.manifest"
+1 VERSIONINFO
+FILEVERSION 1,2,0,0
+PRODUCTVERSION 1,2,0,0
+FILETYPE VFT_APP {
+  BLOCK "StringFileInfo" {
+    BLOCK "040904E4" {
+      VALUE "CompanyName", "Lesserkuma"
+      VALUE "FileVersion", "1.2.0.0"
+      VALUE "FileDescription", "FlashGBX"
+      VALUE "InternalName", "FlashGBX"
+      VALUE "LegalCopyright", "© Lesserkuma"
+      VALUE "LegalTrademarks", ""
+      VALUE "OriginalFilename", ""
+      VALUE "ProductName", "FlashGBX"
+      VALUE "ProductVersion", "1.2.0.0"
+    }
+  }
+  BLOCK "VarFileInfo" {
+    VALUE "Translation", 0x0409, 1252
+  }
+}

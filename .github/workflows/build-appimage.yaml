@@ -83,10 +83,16 @@ jobs:
             --collect-all FlashGBX \
             --collect-all PIL \
             --collect-all PySide6 \
+            --hidden-import FlashGBX.hw_GBxCartRW \
+            --hidden-import FlashGBX.hw_GBFlash \
+            --hidden-import FlashGBX.hw_JoeyJr \
+            --hidden-import FlashGBX.hw_GameBub \
             run_AppImage.py
 
           mkdir -p dist/FlashGBX/res
           cp -a FlashGBX/res/. dist/FlashGBX/res/
+          mkdir -p dist/FlashGBX/locale
+          cp -a FlashGBX/locale/. dist/FlashGBX/locale/
 
       - name: Remove unnecessary Qt and system libraries
         run: |
@@ -107,6 +113,10 @@ jobs:
           rm dist/FlashGBX/_internal/libgobject-2.0.so* || true
           rm dist/FlashGBX/_internal/libgio-2.0.so* || true
           rm dist/FlashGBX/_internal/libgtk-3.so* || true
+          rm dist/FlashGBX/_internal/libpango*.so* || true
+          rm dist/FlashGBX/_internal/libatk-1.0.so* || true
+          rm dist/FlashGBX/_internal/libatk-bridge-2.0.so* || true
+          rm dist/FlashGBX/_internal/libatspi.so* || true
           rm dist/FlashGBX/_internal/libgbm.so* || true
           rm dist/FlashGBX/_internal/libepoxy.so* || true
           rm dist/FlashGBX/_internal/libasound.so* || true
@@ -116,6 +126,7 @@ jobs:
           rm dist/FlashGBX/_internal/libfontconfig.so* || true
           rm dist/FlashGBX/_internal/libfreetype.so* || true
           rm dist/FlashGBX/_internal/libharfbuzz.so* || true
+          rm dist/FlashGBX/_internal/libcairo.so* || true
 
       - name: Prepare AppDir
         run: |
@@ -126,32 +137,97 @@ jobs:
           #!/bin/sh
           APPDIR="$(dirname "$(readlink -f "$0")")"
 
-          exec "$APPDIR/FlashGBX" "$@"
+          # Expose bundled data (icons, desktop file) to the app process
+          export XDG_DATA_DIRS="${APPDIR}/usr/share${XDG_DATA_DIRS:+:${XDG_DATA_DIRS}}"
+
+          # Desktop integration: install icon and .desktop file into the user's
+          # local share dirs so that Wayland compositors and X11 desktop
+          # environments can resolve the taskbar icon via the app_id / WM_CLASS.
+          # $APPIMAGE is set by the AppImage runtime to the .AppImage file path.
+          if [ -n "${APPIMAGE}" ]; then
+              _icon_src="${APPDIR}/usr/share/icons/hicolor/256x256/apps/flashgbx.png"
+              _icon_dst="${HOME}/.local/share/icons/hicolor/256x256/apps/flashgbx.png"
+              _desk_src="${APPDIR}/usr/share/applications/flashgbx.desktop"
+              _desk_dst="${HOME}/.local/share/applications/flashgbx.desktop"
+
+              mkdir -p "${HOME}/.local/share/icons/hicolor/256x256/apps" \
+                       "${HOME}/.local/share/applications"
+
+              # Refresh icon when the AppImage is newer than the installed copy
+              if [ ! -f "${_icon_dst}" ] || [ "${_icon_src}" -nt "${_icon_dst}" ]; then
+                  cp -f "${_icon_src}" "${_icon_dst}"
+              fi
+
+              # Always rewrite Exec= so it points at the current AppImage path.
+              sed "s|^Exec=.*|Exec=${APPIMAGE}|" "${_desk_src}" > "${_desk_dst}"
+              update-desktop-database "${HOME}/.local/share/applications" 2>/dev/null || true
+          fi
+
+          exec "${APPDIR}/FlashGBX" "$@"
           EOF
 
           chmod +x AppDir/AppRun
 
           mkdir -p AppDir/usr/share/applications
-          cat > AppDir/usr/share/applications/FlashGBX.desktop << 'EOF'
+          cat > AppDir/usr/share/applications/flashgbx.desktop << 'EOF'
           [Desktop Entry]
           Name=FlashGBX
           Exec=FlashGBX
-          Icon=FlashGBX
-          StartupWMClass=FlashGBX
+          Icon=flashgbx
+          StartupWMClass=flashgbx
           Comment=Interface software for GB/GBC/GBA cart readers
           Type=Application
           Categories=Game;Utility;
           EOF
 
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp FlashGBX/res/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/FlashGBX.png
+          cp FlashGBX/res/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/flashgbx.png
+          cp FlashGBX/res/icon.png AppDir/flashgbx.png
+          ln -sf flashgbx.png AppDir/.DirIcon
+
+      - name: Validate desktop and icon wiring
+        run: |
+          desktop_file="AppDir/usr/share/applications/flashgbx.desktop"
+          if [ ! -f "$desktop_file" ]; then
+            echo "Desktop file missing: $desktop_file"
+            exit 1
+          fi
+
+          desktop_id="$(basename "$desktop_file" .desktop)"
+          icon_name="$(awk -F= '/^Icon=/{print $2; exit}' "$desktop_file" | tr -d '[:space:]')"
+          if [ -z "$icon_name" ]; then
+            echo "Desktop file Icon entry is missing."
+            exit 1
+          fi
+
+          icon_path="AppDir/usr/share/icons/hicolor/256x256/apps/${icon_name}.png"
+          if [ ! -f "$icon_path" ]; then
+            echo "Icon file referenced by desktop entry is missing: $icon_path"
+            exit 1
+          fi
+
+          if [ ! -L AppDir/.DirIcon ] || [ ! -e AppDir/.DirIcon ]; then
+            echo "AppDir/.DirIcon symlink is missing or broken."
+            ls -la AppDir
+            exit 1
+          fi
+
+          if [ "$(readlink AppDir/.DirIcon)" != "${icon_name}.png" ]; then
+            echo "AppDir/.DirIcon does not point to ${icon_name}.png"
+            exit 1
+          fi
+
+          if [ "$desktop_id" != "$icon_name" ]; then
+            echo "Desktop ID ($desktop_id) and Icon name ($icon_name) should match for reliable taskbar mapping."
+            exit 1
+          fi
 
       - name: Build AppImage with linuxdeploy
         run: |
           ./${{ matrix.linuxdeploy }} --appdir AppDir \
             --executable AppDir/FlashGBX \
-            --desktop-file AppDir/usr/share/applications/FlashGBX.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/FlashGBX.png \
+            --desktop-file AppDir/usr/share/applications/flashgbx.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/flashgbx.png \
             --output appimage
 
           mv FlashGBX-${{ env.VERSION }}-*.AppImage FlashGBX-${{ env.VERSION }}_Linux-${{ matrix.arch }}.AppImage
