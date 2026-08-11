@@ -19,7 +19,7 @@ class SetVariable(Command):
 
     def from_lk(self, rx_data: bytes):
         self._rx.extend(rx_data)
-        if len(self._rx) < 7:
+        if len(self._rx) < 9:
             return
         # byte [0]    size
         #      [1..4] key (first 3 bytes unused)
