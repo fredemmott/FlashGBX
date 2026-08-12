@@ -14,5 +14,7 @@ def lookup_var_key(name: str) -> int:
 VAR_IDX_ADDRESS = lookup_var_key("ADDRESS")
 VAR_IDX_TRANSFER_SIZE = lookup_var_key("TRANSFER_SIZE")
 VAR_IDX_FLASH_WE_PIN = lookup_var_key("FLASH_WE_PIN")
+VAR_IDX_LAST_BANK_ACCESSED = lookup_var_key("LAST_BANK_ACCESSED")
+VAR_IDX_FLASH_COMMANDS_BANK_1 = lookup_var_key("FLASH_COMMANDS_BANK_1")
 # make_var_key() can not return > 16-bit values
 VAR_IDX_HOLD_PIN_AUDIO = 0x10000

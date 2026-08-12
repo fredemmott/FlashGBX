@@ -26,14 +26,34 @@ class ChromaticCmdFlashProgram(Command):
     def is_complete(self) -> bool:
         return self._is_complete
 
+    def _enqueue_switch_bank(self, index):
+        self._io.mc_enqueue(
+            [
+                (address, index) if mode == 0 else (index, address & 0xFF)
+                for (address, mode) in self._state.bank_change_commands
+            ],
+            is_write=True,
+            is_flash=False,
+            flush=False)
+
+    def _switch_to_flash_commands_bank(self):
+        if self._fw_vars[VAR_IDX_FLASH_COMMANDS_BANK_1]:
+            self._enqueue_switch_bank(1)
+
+    def _restore_data_bank(self):
+        if self._fw_vars[VAR_IDX_FLASH_COMMANDS_BANK_1]:
+            self._enqueue_switch_bank(self._fw_vars[VAR_IDX_LAST_BANK_ACCESSED])
+
     def from_lk(self, rx_data: bytes):
         for byte in rx_data:
+            self._switch_to_flash_commands_bank()
             self._io.mc_enqueue(
                 self._state.flash_commands,
                 is_write=True,
                 is_flash=True,
                 flush=False
             )
+            self._restore_data_bank()
             self._io.mc_enqueue(
                 [(self._address, byte)],
                 is_write=True,

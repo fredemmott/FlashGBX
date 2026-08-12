@@ -1,7 +1,8 @@
 from ..Command import Command
 from ..Interface import Interface
 from ..State import State
-from ..vars import *
+
+import struct
 
 class DmgSetBankChangeCmd(Command):
     command = "DMG_SET_BANK_CHANGE_CMD"
@@ -28,7 +29,11 @@ class DmgSetBankChangeCmd(Command):
         if len(self._rx) < (count * 8) + 1:
             return
 
-        # Not yet implemented, a stub is fine for some cartridges
+        self._state.bank_change_commands = [
+            struct.unpack(">II", self._rx[1 + (i * 8) : 1 + (i * 8) + 8])
+            for i in range(count)
+        ]
+
         self._is_complete = True
         self._io.lk_response(b"\x01")
 
