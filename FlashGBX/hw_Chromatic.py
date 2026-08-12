@@ -12,6 +12,7 @@ from typing import cast
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "Chromatic"
+	LK_FW_VERSION = 15
 
 	def __init__(self):
 		pass
@@ -140,7 +141,7 @@ class GbxDevice(LK_Device):
 			self._firmware_version = f"v{year}.{month}.{day}.{build}"
 
 			self.FW["cfw_id"] = "L"
-			self.FW["fw_ver"] = 12 # Actually our translator version
+			self.FW["fw_ver"] = self.LK_FW_VERSION
 
 			self.FW["pcb_ver"] = None
 			self.FW["ofw_ver"] = None
@@ -176,32 +177,6 @@ class GbxDevice(LK_Device):
 
 	def ChangeBaudRate(self, _):
 		dprint("Baudrate change is not supported.")
-
-	def CheckActive(self):
-		if time.time() < self.LAST_CHECK_ACTIVE + 1: return True
-		dprint("Checking if device is active")
-		if self.DEVICE is None: return False
-		if self.FW["pcb_name"] is None:
-			if self.LoadFirmwareVersion():
-				self.LAST_CHECK_ACTIVE = time.time()
-				return True
-			else:
-				return False
-		try:
-			self._get_fw_variable("CART_MODE")
-			self.LAST_CHECK_ACTIVE = time.time()
-			return True
-		except Exception as e:
-			dprint("Disconnecting...", e)
-			try:
-				if self.DEVICE.isOpen():
-					self.DEVICE.reset_input_buffer()
-					self.DEVICE.reset_output_buffer()
-					self.DEVICE.close()
-				self.DEVICE = None
-			except:
-				pass
-			return False
 
 	def GetFirmwareVersion(self, more=False):
 		return f"v{self.FW["fw_ver/ChromaticDumper"]} (based on v{self.FW['fw_ver/Upstream']})"

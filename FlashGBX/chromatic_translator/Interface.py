@@ -49,7 +49,7 @@ class Interface(Protocol):
         raise NotImplementedError()
 
     @abstractmethod
-    def mc_ping(self) -> None:
+    def mc_ping(self, challenge: int) -> int:
         raise NotImplementedError()
 
     @abstractmethod

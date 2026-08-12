@@ -7,6 +7,7 @@ from .DmgMbcReset import *
 from .DmgSetBankChangeCmd import *
 from .FlashProgram import *
 from .GetVariable import *
+from .Ping import *
 from .SetAddrAsInputs import *
 from .SetFlashCmd import *
 from .SetPin import *

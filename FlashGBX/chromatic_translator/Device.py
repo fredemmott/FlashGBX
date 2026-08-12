@@ -249,9 +249,12 @@ class Device(serial.Serial, Interface):
             pending -= count
         return ret
 
-    def mc_ping(self) -> None:
-        self.usb_write(b"\x04")
-        self.mc_wait_for_ack()
+    def mc_ping(self, challenge: int) -> int:
+        self.usb_write(struct.pack("BB", 0x04, challenge))
+        response = self.usb_read_byte()
+        if not response:
+            raise Exception("No response to microcode ping")
+        return response
 
     def mc_wait_for_ack(self):
         ret = self.usb_read_byte()
