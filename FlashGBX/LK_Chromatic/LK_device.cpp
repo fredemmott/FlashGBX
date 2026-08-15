@@ -18,7 +18,6 @@ extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
 }
 
 extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
-    // TODO STUB
     return 0xFF;
 }
 
@@ -28,4 +27,20 @@ extern "C" void LK_Chromatic_DELAY_NANOS(const uint16_t duration) {
 
 extern "C" void LK_Chromatic_DELAY_MICROS(const uint16_t duration) {
     std::this_thread::sleep_for(std::chrono::microseconds(duration));
+}
+
+extern "C" void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high) {
+}
+
+extern "C" void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe) {
+}
+
+extern "C" void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
+    // TODO: raise error if pin != 15
+}
+
+extern "C" void LK_Chromatic_DMG_ADDR_SET(const uint16_t address) {
+}
+
+extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
 }

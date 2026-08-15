@@ -37,27 +37,30 @@ void LK_Chromatic_DELAY_MICROS(uint16_t);
 #define _timeout_reset()					time_start = 0;
 #define _timeout_check()					((time_start > 0) && (TIMESTAMP_NOW() - time_start > 500))
 
-#define PIN_WR								/**/
-#define PIN_RD								/**/
-#define PIN_CS								/**/
-#define PIN_CS2								/**/
-#define PIN_AUDIO							/**/
-#define PIN_CLK								/**/
+/* Values match lk_types.sv in the Chromatic verilog */
+#define PIN_WR								1
+#define PIN_RD								2
+#define PIN_CS								3
+#define PIN_CS2								5 /* DMG: RST - AGB: CS2 */
+#define PIN_AUDIO							6
+#define PIN_CLK								0
 #define VOLTAGE_SELECT						/**/
-#define PIN_WR_H()							{}
-#define PIN_WR_L()							{}
-#define PIN_RD_H()							{}
-#define PIN_RD_L()							{}
-#define PIN_CS_H()							{}
-#define PIN_CS_L()							{}
-#define PIN_CS2_H()							{}
-#define PIN_CS2_L()							{}
-#define PIN_AUDIO_H()						{}
-#define PIN_AUDIO_L()						{}
-#define PIN_CLK_H()							{}
-#define PIN_CLK_L()							{}
-#define PIN_ADDR_H(pin)						{}
-#define PIN_ADDR_L(pin)						{}
+void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high);
+#define PIN_WR_H()							LK_Chromatic_SET_PIN(PIN_WR, 1)
+#define PIN_WR_L()							LK_Chromatic_SET_PIN(PIN_WR, 0)
+#define PIN_RD_H()							LK_Chromatic_SET_PIN(PIN_RD, 1)
+#define PIN_RD_L()							LK_Chromatic_SET_PIN(PIN_RD, 0)
+#define PIN_CS_H()							LK_Chromatic_SET_PIN(PIN_CS, 1)
+#define PIN_CS_L()							LK_Chromatic_SET_PIN(PIN_CS, 0)
+#define PIN_CS2_H()							LK_Chromatic_SET_PIN(PIN_CS2, 1)
+#define PIN_CS2_L()							LK_Chromatic_SET_PIN(PIN_CS2, 0)
+#define PIN_AUDIO_H()						LK_Chromatic_SET_PIN(PIN_AUDIO, 1)
+#define PIN_AUDIO_L()						LK_Chromatic_SET_PIN(PIN_AUDIO, 0)
+#define PIN_CLK_H()							LK_Chromatic_SET_PIN(PIN_CLK, 1)
+#define PIN_CLK_L()							LK_Chromatic_SET_PIN(PIN_CLK, 0)
+void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high);
+#define PIN_ADDR_H(pin)						LK_Chromatic_SET_ADDR_PIN(pin, 1)
+#define PIN_ADDR_L(pin)						LK_Chromatic_SET_ADDR_PIN(pin, 0)
 
 #define CART_POWER_ON()						{}
 #define CART_POWER_OFF()					{}
@@ -74,8 +77,15 @@ uint32_t LK_Chromatic_TIMESTAMP_NOW();
 #define RAW_PINS_DIR_OUT()					{}
 #define RAW_PINS_DIR_IN()					{}
 
-#define PIN_AUDIO_DIR_OUT()					{}
-#define PIN_AUDIO_DIR_IN()					{}
+// Match lk_types.sv in the FPGA
+#define TRISTATE_AUDIO 0
+#define TRISTATE_DATA 1
+#define TRISTATE_ADDRESS 2
+void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe);
+
+
+#define PIN_AUDIO_DIR_OUT()					LK_Chromatic_OUTPUT_ENABLE(TRISTATE_AUDIO, 1)
+#define PIN_AUDIO_DIR_IN()					LK_Chromatic_OUTPUT_ENABLE(TRISTATE_AUDIO, 0)
 
 #define PULLUPS_ON()						{}
 
@@ -94,14 +104,17 @@ uint32_t LK_Chromatic_TIMESTAMP_NOW();
 
 #define CHUNK_MAX_LEN						64
 
-// GB/GBC
-#define RAW_DMG_ADDR_SET(addr)				{}
-#define RAW_DMG_DATA_SET(data)				{}
 
-#define RAW_DMG_ADDR_DIR_OUT()				{}
-#define RAW_DMG_ADDR_DIR_IN()				{}
-#define RAW_DMG_DATA_DIR_OUT()				{}
-#define RAW_DMG_DATA_DIR_IN()				{}
+// GB/GBC
+void LK_Chromatic_DMG_ADDR_SET(uint16_t);
+void LK_Chromatic_DMG_DATA_SET(uint8_t);
+#define RAW_DMG_ADDR_SET(addr)				LK_Chromatic_DMG_ADDR_SET(addr)
+#define RAW_DMG_DATA_SET(data)				LK_Chromatic_DMG_DATA_SET(data)
+
+#define RAW_DMG_ADDR_DIR_OUT()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_ADDRESS, 1)
+#define RAW_DMG_ADDR_DIR_IN()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_ADDRESS, 0)
+#define RAW_DMG_DATA_DIR_OUT()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_DATA, 1)
+#define RAW_DMG_DATA_DIR_IN()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_DATA, 0)
 
 uint8_t LK_Chromatic_DMG_RAW_DATA_GET();
 #define RAW_DMG_DATA_GET()					LK_Chromatic_DMG_RAW_DATA_GET()
