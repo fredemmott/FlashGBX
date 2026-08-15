@@ -47,3 +47,7 @@ include = ["FlashGBX*"]
 
 [tool.setuptools.package-data]
 FlashGBX = ["res/**/*", "locale/**/*"]
+
+[build-system]
+requires = ["scikit-build-core"]
+build-backend = "scikit_build_core.build"

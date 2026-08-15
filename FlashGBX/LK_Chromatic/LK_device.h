@@ -19,15 +19,17 @@
 #define LK_CART_PRESENCE_SWITCH_SUPPORT		false
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
-#define dprint(s, params...)				{}
+#define dprint(s, ...) {}
 
 // Delays including overhead, measured with a DSLogic U3Pro32
-#define _delay_100ns()						{} // 160ns
-#define _delay_200ns()						{ __NOP(); __NOP(); __NOP(); } // 250ns
-#define _delay_300ns()						{ __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); } // 310ns
-#define _delay_400ns()						{ __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); } // 400ns
-#define _delay_500ns()						{ __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); } // 500ns
-#define _delay_us(us)						{ for (u32 delay = 0; delay < us; delay++) { __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); } }
+void LK_Chromatic_DELAY_NANOS(uint16_t);
+void LK_Chromatic_DELAY_MICROS(uint16_t);
+#define _delay_100ns()						LK_Chromatic_DELAY_NANOS(100)
+#define _delay_200ns()						LK_Chromatic_DELAY_NANOS(200)
+#define _delay_300ns()						LK_Chromatic_DELAY_NANOS(300)
+#define _delay_400ns()						LK_Chromatic_DELAY_NANOS(400)
+#define _delay_500ns()						LK_Chromatic_DELAY_NANOS(500)
+#define _delay_us(us)						LK_Chromatic_DELAY_MICROS(us)
 #define _delay_ms(ms)						_delay_us(ms * 1000)
 #define _delay_dmg_slow_access()			_delay_us(2)
 
@@ -65,7 +67,9 @@
 #define SET_VOLTAGE_5V()					{}
 #define AUTO_POWEROFF_RESUME()				{}
 #define AUTO_POWEROFF_SUSPEND()				{}
-#define TIMESTAMP_NOW()						{}
+
+uint32_t LK_Chromatic_TIMESTAMP_NOW();
+#define TIMESTAMP_NOW()						LK_Chromatic_TIMESTAMP_NOW()
 
 #define RAW_PINS_DIR_OUT()					{}
 #define RAW_PINS_DIR_IN()					{}
@@ -99,7 +103,8 @@
 #define RAW_DMG_DATA_DIR_OUT()				{}
 #define RAW_DMG_DATA_DIR_IN()				{}
 
-#define RAW_DMG_DATA_GET()					{}
+uint8_t LK_Chromatic_DMG_RAW_DATA_GET();
+#define RAW_DMG_DATA_GET()					LK_Chromatic_DMG_RAW_DATA_GET()
 
 // GBA
 #define RAW_AGB_ADDR_SET(addr)				{}
@@ -110,7 +115,7 @@
 #define RAW_AGB_DATA_DIR_OUT()				{}
 #define RAW_AGB_DATA_DIR_IN()				{}
 
-#define RAW_AGB_DATA_GET()					{}
+#define RAW_AGB_DATA_GET()					(0xFF) /* unsupported */
 
 // GBA EEPROM
 #define PIN_A0_H()							PIN_ADDR_H(0)

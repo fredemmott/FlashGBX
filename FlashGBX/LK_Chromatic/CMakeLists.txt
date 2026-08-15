@@ -1,0 +1,27 @@
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+
+Python_add_library(
+  _LK_Chromatic
+  MODULE
+  LK.c
+  LK.h
+  LK_device.cpp
+  LK_device.h
+)
+
+set_target_properties(
+  _LK_Chromatic
+  PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+
+if (MSVC)
+    # Enable conformant mode for the C preprocessor
+    target_compile_options(_LK_Chromatic PRIVATE "/Zc:preprocessor")
+endif()
+
+install(TARGETS _LK_Chromatic DESTINATION FlashGBX_Native)

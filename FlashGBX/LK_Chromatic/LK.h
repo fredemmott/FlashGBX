@@ -23,9 +23,6 @@
 #ifndef NULL
 	#define NULL ((void *)0)
 #endif
-#ifndef bool
-	#define bool u8
-#endif
 #ifndef u8
 	#define u8 uint8_t
 	#define u16 uint16_t
@@ -36,9 +33,15 @@
 	#define s16 int16_t
 	#define s32 int32_t
 #endif
+
+#ifndef __cplusplus
+#ifndef bool
+	#define bool u8
+#endif
 #ifndef true
 	#define true 1
 	#define false 0
+#endif
 #endif
 
 #define LK_FIRMWARE_VERSION			15
