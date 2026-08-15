@@ -44,3 +44,9 @@ extern "C" void LK_Chromatic_DMG_ADDR_SET(const uint16_t address) {
 
 extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
 }
+
+extern "C" void LK_Chromatic_CONN_SEND(uint8_t* data, uint16_t count) {
+}
+
+extern "C" void LK_Chromatic_CONN_RECV(uint8_t* data, uint16_t count) {
+}

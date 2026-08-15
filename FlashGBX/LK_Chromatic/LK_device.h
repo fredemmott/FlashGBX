@@ -91,9 +91,14 @@ void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe);
 
 #define PULLUPS_OFF()						{}
 
-#define CONN_RECV(data, count)				{}
-#define CONN_SEND_BYTE(data)				{}
-#define CONN_SEND(data, count)				{}
+void LK_Chromatic_CONN_SEND(uint8_t* data, uint16_t count);
+void LK_Chromatic_CONN_RECV(uint8_t* data, uint16_t count);
+inline void LK_Chromatic_CONN_SEND_BYTE(uint8_t data) {
+    LK_Chromatic_CONN_SEND(&data, 1);
+}
+#define CONN_RECV(data, count)				LK_Chromatic_CONN_RECV(data, count)
+#define CONN_SEND_BYTE(data)				LK_Chromatic_CONN_SEND_BYTE(data)
+#define CONN_SEND(data, count)				LK_Chromatic_CONN_SEND(data, count)
 #define BOOTLOADER_RESET()					{}
 
 #define DISABLE_INTERRUPTS()				{}
