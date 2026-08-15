@@ -7,6 +7,7 @@ Python_add_library(
   LK.h
   LK_device.cpp
   LK_device.h
+  PAPI.hpp
 )
 
 set_target_properties(
@@ -24,4 +25,4 @@ if (MSVC)
     target_compile_options(_LK_Chromatic PRIVATE "/Zc:preprocessor")
 endif()
 
-install(TARGETS _LK_Chromatic DESTINATION FlashGBX_Native)
+install(TARGETS _LK_Chromatic DESTINATION FlashGBX)

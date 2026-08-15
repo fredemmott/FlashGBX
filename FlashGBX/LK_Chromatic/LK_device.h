@@ -44,6 +44,7 @@ void LK_Chromatic_DELAY_MICROS(uint16_t);
 #define PIN_CS2								5 /* DMG: RST - AGB: CS2 */
 #define PIN_AUDIO							6
 #define PIN_CLK								0
+#define PIN_A15                             7 /* just for Chromatic */
 #define VOLTAGE_SELECT						/**/
 void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high);
 #define PIN_WR_H()							LK_Chromatic_SET_PIN(PIN_WR, 1)
