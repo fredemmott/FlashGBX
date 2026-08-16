@@ -1,6 +1,4 @@
-find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
-
-Python_add_library(
+add_library(
   _LK_Chromatic
   MODULE
   LK.c
@@ -18,6 +16,7 @@ set_target_properties(
   CXX_STANDARD 20
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
+  PREFIX "" # no `lib` prefix on Linux
 )
 
 if (MSVC)

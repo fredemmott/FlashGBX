@@ -51,6 +51,3 @@ FlashGBX = ["res/**/*", "locale/**/*"]
 [build-system]
 requires = ["scikit-build-core"]
 build-backend = "scikit_build_core.build"
-
-[tool.scikit-build]
-wheel.packages = [ "FlashGBX/LK_Chromatic" ]

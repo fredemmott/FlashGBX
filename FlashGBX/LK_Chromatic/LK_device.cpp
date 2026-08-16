@@ -26,33 +26,98 @@ static LK_Chromatic_data_callback
     PAPI_RecvFromDevice = nullptr,
     PAPI_OnError = nullptr;
 
-static void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
-    uint8_t message[3];
-    message[0] = static_cast<std::underlying_type_t<Command>>(cmd);
-    message[1] = arg8a;
-    message[2] = arg8b;
-    PAPI_SendToDevice(message, 3);
-}
-
-static void SendToDevice16(const Command cmd, const uint16_t arg16) {
-    SendToDevice(cmd, static_cast<uint8_t>(arg16 >> 8), static_cast<uint8_t>(arg16 & 0xFF));
-}
-
 template<class... Args>
 void LogError(std::format_string<Args...> fmt, Args&&... args) {
     const auto s = std::vformat(fmt.get(), std::make_format_args(args...));
     PAPI_OnError((uint8_t*)s.data(), s.length());
 }
 
+static bool asyncEnabled = false;
+static uint8_t asyncBuffer[65536];
+static uint8_t* asyncBufferIt;
+
+static bool tailIsSetPins() {
+    if (!asyncEnabled) return false;
+    if (asyncBufferIt == asyncBuffer) return false;
+    const auto p = asyncBufferIt - 3;
+    return *p == static_cast<uint8_t>(Command::SetPins);
+}
+static void mergeSetPins(uint8_t pins, uint8_t values) {
+    const auto p = asyncBufferIt - 3;
+    p[1] |= pins;
+    p[2] |= (p[2] & ~pins) | (values & pins);
+}
+
+extern "C" void LK_Chromatic_async_start() {
+    asyncEnabled = true;
+    asyncBufferIt = asyncBuffer;
+    memset(asyncBuffer, 0, std::size(asyncBuffer));
+}
+
+extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
+    asyncEnabled = false;
+    const auto txCount = asyncBufferIt - asyncBuffer;
+    const auto commandCount = txCount / 3;
+    const auto rxCount = commandCount * 2;
+
+    PAPI_SendToDevice(asyncBuffer, asyncBufferIt - asyncBuffer);
+    memset(asyncBuffer, 0, std::size(asyncBuffer));
+    PAPI_RecvFromDevice(asyncBuffer, rxCount);
+
+    const auto begin = asyncBuffer;
+    const auto end = asyncBuffer + rxCount;
+    uint16_t count = 0;
+    for (auto packetIt = begin; packetIt != end; packetIt = &packetIt[2]) {
+        if (packetIt[0] == static_cast<uint8_t>(Command::GetData)) {
+            if (count > len) {
+                LogError("Too many data bytes - expected {}", count);
+                return;
+            }
+            ++count;
+            if (data) {
+                *data = packetIt[1];
+                ++data;
+            }
+        }
+    }
+    if (count != len) {
+        LogError("Incorrect data length - expected {}, got {}", len, count);
+    }
+}
+
+static void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
+    uint8_t buffer[3];
+    uint8_t* p = asyncEnabled ? asyncBufferIt : buffer;
+
+    p[0] = static_cast<std::underlying_type_t<Command>>(cmd);
+    p[1] = arg8a;
+    p[2] = arg8b;
+
+    if (asyncEnabled) {
+        asyncBufferIt += 3;
+    } else {
+        PAPI_SendToDevice(buffer, 3);
+    }
+}
+
+static void SendToDevice16(const Command cmd, const uint16_t arg16) {
+    SendToDevice(cmd, static_cast<uint8_t>(arg16 >> 8), static_cast<uint8_t>(arg16 & 0xFF));
+}
+
 template<Command T>
 static [[nodiscard]] uint8_t RecvFromDevice() {
+    if (asyncEnabled) {
+        return 0xFF;
+    }
+
     static constexpr auto Expected = static_cast<uint8_t>(T);
     uint8_t buffer[2];
     PAPI_RecvFromDevice(buffer, 2);
     if (buffer[0] != Expected) [[unlikely]] {
-        LogError("Response did not match command: expected '{}', got '{}'",
+        LogError("Response did not match command: expected '{}', got '{}' ({:#06x})",
             Expected,
-            buffer[0]
+            buffer[0],
+            (buffer[0] << 8) | buffer[1]
         );
         return 0;
     }
@@ -61,6 +126,10 @@ static [[nodiscard]] uint8_t RecvFromDevice() {
 
 template<Command T>
 static void WaitForDevice() {
+    if (asyncEnabled) {
+        return;
+    }
+
     const auto result = RecvFromDevice<T>();
     if (result != 1) [[unlikely]] {
         LogError("Expected ack (1), got {}", result);
@@ -85,20 +154,34 @@ extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
 }
 
 extern "C" void LK_Chromatic_DELAY_NANOS(const uint16_t duration) {
-    std::this_thread::sleep_for(std::chrono::nanoseconds(duration));
+    if (asyncEnabled) {
+        SendToDevice16(Command::DelayNanos, duration);
+    } else {
+        std::this_thread::sleep_for(std::chrono::nanoseconds(duration));
+    }
 }
 
 extern "C" void LK_Chromatic_DELAY_MICROS(const uint16_t duration) {
-    std::this_thread::sleep_for(std::chrono::microseconds(duration));
+    if (asyncEnabled) {
+        SendToDevice16(Command::DelayMicros, duration);
+    } else {
+        std::this_thread::sleep_for(std::chrono::microseconds(duration));
+    }
 }
 
 extern "C" void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high) {
-    SendToDevice(Command::SetPins, pin, high);
-    WaitForDevice<Command::SetPins>();
+    const uint8_t pins = (1 << pin);
+    const uint8_t values = (high << pin);
+    if (tailIsSetPins()) {
+        mergeSetPins(pins, values);
+    } else {
+        SendToDevice(Command::SetPins, pins, values);
+        WaitForDevice<Command::SetPins>();
+    }
 }
 
 extern "C" void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe) {
-    SendToDevice(Command::SetOutputEnable, oe);
+    SendToDevice(Command::SetOutputEnable, (1 << tristate_pin), (oe << tristate_pin));
     WaitForDevice<Command::SetOutputEnable>();
 }
 
