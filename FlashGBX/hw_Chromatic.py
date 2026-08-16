@@ -44,35 +44,22 @@ class GbxDevice(LK_Device):
         self._load_ffi()
 
     def _load_ffi(self):
-
-        callbacks = [
-            "send_to_flashgbx",
-            "recv_from_flashgbx",
-            "on_error",
-        ]
-        for fn in callbacks:
-            reg = getattr(self._lk, f"papi_set_{fn}_callback")
-            reg.argtypes = [NATIVE_DATA_CALLBACK]
-            reg.restype = None
-
-        self._lk.papi_entrypoint.argtypes = [ctypes.c_uint8]
-        self._lk.papi_entrypoint.restype = None
         self._lk.papi_set_native_handle.argtypes = [ctypes.c_void_p]
         self._lk.papi_set_native_handle.restype = None
 
-        self._c_callbacks = [
-            self._reg_ffi_send_callback(self._lk.papi_set_send_to_flashgbx_callback, self._lk_send_to_flashgbx),
-            self._reg_ffi_recv_callback(self._lk.papi_set_recv_from_flashgbx_callback, self._lk_recv_from_flashgbx),
+        self._lk.papi_flashgbx_write.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+        self._lk.papi_flashgbx_write.restype = None
 
-            self._reg_ffi_send_callback(self._lk.papi_set_on_error_callback, self._lk_on_error),
-        ]
+        self._lk.papi_flashgbx_read.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+        self._lk.papi_flashgbx_read.restype = None
 
-    def _reg_ffi_send_callback(self, reg_fn, py_fn):
+        self._lk.papi_set_on_error_callback.argtypes = [NATIVE_DATA_CALLBACK]
+        self._lk.papi_set_on_error_callback.restype = None
+
         def cb(ptr, count) -> None:
-            py_fn(bytes(ptr[:count]))
-        c_cb = NATIVE_DATA_CALLBACK(cb)
-        reg_fn(c_cb)
-        return c_cb
+            self._lk_on_error(bytes(ptr[:count]))
+        self._lk_on_error_cb = NATIVE_DATA_CALLBACK(cb)
+        self._lk.papi_set_on_error_callback(self._lk_on_error_cb)
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
@@ -83,18 +70,9 @@ class GbxDevice(LK_Device):
         reg_fn(c_cb)
         return c_cb
 
-    def _lk_send_to_flashgbx(self, data: bytes) -> None:
-        self.DEVICE.lk_send_to_flashgbx(data)
-
-    def _lk_recv_from_flashgbx(self, count: int) -> bytes:
-        return self.DEVICE.lk_recv_from_flashgbx(count)
-
     def _lk_on_error(self, data: bytes) -> None:
         self.DEVICE.lk_on_error(data)
         pass
-
-    def _lk_entrypoint(self, command: int):
-        self._lk.papi_entrypoint(command)
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected(): self.DEVICE.close()
@@ -233,7 +211,7 @@ class GbxDevice(LK_Device):
             self.FW["bootloader_reset"] = False
 
             self.DEVICE.__class__ = MicrocodeDevice
-            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk_entrypoint)
+            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk.papi_flashgbx_read, self._lk.papi_flashgbx_write)
             h = self.DEVICE.native_handle()
             if h is not None:
                 self._lk.papi_set_native_handle(h)

@@ -4,8 +4,10 @@ extern "C" {
 
 #include "PAPI.hpp"
 
+#include <array>
 #include <chrono>
 #include <format>
+#include <functional>
 #include <thread>
 
 #if __has_include(<windows.h>)
@@ -14,6 +16,59 @@ extern "C" {
 static HANDLE mcHandle = nullptr;
 static HANDLE mcEvent = nullptr;
 #endif
+
+template<std::size_t N>
+class RingBuffer final {
+public:
+    void write(const void* data, std::size_t count) {
+        const auto idx = _writeIndex.load(std::memory_order_relaxed);
+        const auto firstCount = std::min(N - idx, count);
+
+        if (firstCount) {
+            memcpy(&_buffer[idx], data, firstCount);
+        }
+        if (firstCount != count) {
+            memcpy(&_buffer[0], static_cast<const uint8_t*>(data) + firstCount, count - firstCount);
+        }
+
+        _writeIndex.store((idx + count) % N, std::memory_order_release);
+        _writeIndex.notify_one();
+    }
+
+    void read(void* data, const std::size_t count) {
+        std::size_t bytesRead = 0;
+        const auto it = static_cast<uint8_t*>(data);
+
+        while (bytesRead < count) {
+            while (_readIndex == _writeIndex.load(std::memory_order_acquire)) {
+                _writeIndex.wait(_readIndex, std::memory_order_relaxed);
+            }
+            const auto writeIdx = _writeIndex.load(std::memory_order_acquire);
+
+            std::size_t available = 0;
+            if (writeIdx >= _readIndex) {
+                available = writeIdx - _readIndex;
+            } else {
+                available = N - _readIndex;
+            }
+
+            const auto toRead = std::min(available, count - bytesRead);
+            if (toRead > 0) {
+                if (data) {
+                    memcpy(it + bytesRead, &_buffer[_readIndex], toRead);
+                }
+                _readIndex = (_readIndex + toRead) % N;
+                bytesRead += toRead;
+            }
+        }
+    }
+private:
+    std::array<uint8_t, N> _buffer;
+    std::size_t _readIndex {};
+    std::atomic<std::size_t> _writeIndex {};
+};
+RingBuffer<65536> fromFlashGBX;
+RingBuffer<65536> toFlashGBX;
 
 enum class Command : uint8_t {
     Ping = 0,
@@ -26,10 +81,7 @@ enum class Command : uint8_t {
     GetData = 7
 };
 
-static LK_Chromatic_data_callback
-    PAPI_SendToFlashGBX = nullptr,
-    PAPI_RecvFromFlashGBX = nullptr,
-    PAPI_OnError = nullptr;
+static LK_Chromatic_data_callback PAPI_OnError = nullptr;
 
 template<class... Args>
 void LogError(std::format_string<Args...> fmt, Args&&... args) {
@@ -213,18 +265,40 @@ extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
 }
 
 extern "C" void LK_Chromatic_CONN_SEND(uint8_t* data, uint16_t count) {
-    PAPI_SendToFlashGBX(data, count);
+    toFlashGBX.write(data, count);
 }
 
 extern "C" void LK_Chromatic_CONN_RECV(uint8_t* data, uint16_t count) {
-    PAPI_RecvFromFlashGBX(data, count);
+    fromFlashGBX.read(data, count);
 }
 
 ///// Python API (PAPI) /////
 
-extern "C" LK_CHROMATIC_EXPORT void papi_entrypoint(uint8_t command) {
-    lk_loop(command);
+extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_read(uint8_t* data, uint16_t count) {
+    toFlashGBX.read(data, count);
 }
+
+extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, uint16_t count) {
+    if (count == 0) {
+        return;
+    }
+
+    fromFlashGBX.write(data, count);
+
+    static bool haveWorker = false;
+    if (!std::exchange(haveWorker, true)) {
+        std::jthread {
+            [] {
+                while (true) {
+                    uint8_t cmd;
+                    fromFlashGBX.read(&cmd, 1);
+                    lk_loop(cmd);
+                }
+            }
+        }.detach();
+    }
+}
+
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_native_handle(void* handle) {
     mcHandle = handle;
@@ -233,12 +307,10 @@ extern "C" LK_CHROMATIC_EXPORT void papi_set_native_handle(void* handle) {
     }
 }
 
-#define PAPI_CALLBACK(NAME, STORAGE) \
-  extern "C" LK_CHROMATIC_EXPORT void papi_set_##NAME##_callback(LK_Chromatic_data_callback cb) { PAPI_##STORAGE = cb; }
+extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(LK_Chromatic_data_callback cb) {
+    PAPI_OnError = cb;
+}
 
-PAPI_CALLBACK(send_to_flashgbx, SendToFlashGBX)
-PAPI_CALLBACK(recv_from_flashgbx, RecvFromFlashGBX)
-PAPI_CALLBACK(on_error, OnError)
 
 ///// Serial API /////
 
