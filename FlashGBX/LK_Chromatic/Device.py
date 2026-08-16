@@ -55,6 +55,7 @@ class Device(serial.Serial):
     def write(self, data):
         if not isinstance(data, (bytes, bytearray)):
             raise NotImplementedError()
+        data = bytearray(data)
         count = len(data)
         buf_type = ctypes.c_char * count
         buf = buf_type.from_buffer(data)
