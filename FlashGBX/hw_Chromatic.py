@@ -43,14 +43,11 @@ class GbxDevice(LK_Device):
         self._lk = ctypes.CDLL(str(lk_path))
         self._load_ffi()
 
-
     def _load_ffi(self):
 
         callbacks = [
             "send_to_flashgbx",
             "recv_from_flashgbx",
-            "send_to_device",
-            "recv_from_device",
             "on_error",
         ]
         for fn in callbacks:
@@ -60,13 +57,12 @@ class GbxDevice(LK_Device):
 
         self._lk.papi_entrypoint.argtypes = [ctypes.c_uint8]
         self._lk.papi_entrypoint.restype = None
+        self._lk.papi_set_native_handle.argtypes = [ctypes.c_void_p]
+        self._lk.papi_set_native_handle.restype = None
 
         self._c_callbacks = [
             self._reg_ffi_send_callback(self._lk.papi_set_send_to_flashgbx_callback, self._lk_send_to_flashgbx),
             self._reg_ffi_recv_callback(self._lk.papi_set_recv_from_flashgbx_callback, self._lk_recv_from_flashgbx),
-
-            self._reg_ffi_send_callback(self._lk.papi_set_send_to_device_callback, self._lk_send_to_device),
-            self._reg_ffi_recv_callback(self._lk.papi_set_recv_from_device_callback, self._lk_recv_from_device),
 
             self._reg_ffi_send_callback(self._lk.papi_set_on_error_callback, self._lk_on_error),
         ]
@@ -92,12 +88,6 @@ class GbxDevice(LK_Device):
 
     def _lk_recv_from_flashgbx(self, count: int) -> bytes:
         return self.DEVICE.lk_recv_from_flashgbx(count)
-
-    def _lk_send_to_device(self, data: bytes) -> None:
-        self.DEVICE.lk_send_to_device(data)
-
-    def _lk_recv_from_device(self, count: int) -> bytes:
-        return self.DEVICE.lk_recv_from_device(count)
 
     def _lk_on_error(self, data: bytes) -> None:
         self.DEVICE.lk_on_error(data)
@@ -244,6 +234,9 @@ class GbxDevice(LK_Device):
 
             self.DEVICE.__class__ = MicrocodeDevice
             cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk_entrypoint)
+            h = self.DEVICE.native_handle()
+            if h is not None:
+                self._lk.papi_set_native_handle(h)
 
             return True
 

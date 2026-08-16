@@ -18,6 +18,12 @@ set_target_properties(
   CXX_EXTENSIONS OFF
   PREFIX "" # no `lib` prefix on Linux
 )
+target_compile_definitions(
+  _LK_Chromatic
+  PRIVATE
+  WIN32_LEAN_AND_MEAN
+  NOMINMAX
+)
 
 if (MSVC)
     # Enable conformant mode for the C preprocessor

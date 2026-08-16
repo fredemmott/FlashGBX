@@ -1,3 +1,4 @@
+import sys
 import time
 from typing import cast, Tuple, Collection, Callable
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from enum import Enum
 
 import serial
 import threading
+
+from serial import serialwin32
 
 from enum import Enum
 
@@ -42,6 +45,11 @@ class Device(serial.Serial):
 
     _executor_thread: threading.Thread
 
+    def native_handle(self):
+        if sys.platform == "win32":
+            return self._port_handle
+        return None
+
     def lk_send_to_flashgbx(self, data: bytes) -> None:
         with self._to_flashgbx_condition:
             self._to_flashgbx_queue.append(data)
@@ -55,17 +63,6 @@ class Device(serial.Serial):
         ret = bytes(self._from_flashgbx_buf[:count])
         self._from_flashgbx_buf = self._from_flashgbx_buf[count:]
         return ret
-
-    def lk_send_to_device(self, data: bytes) -> None:
-        written = self._usb_write(data)
-        if written != len(data):
-            print("Failed TX")
-
-    def lk_recv_from_device(self, count: int) -> bytes:
-        data = self._usb_read(count)
-        if len(data) != count:
-            print(f"Failed RX; expected {count} bytes, got {len(data)}")
-        return data
 
     def lk_on_error(self, data: bytes) -> None:
         pass

@@ -8,6 +8,13 @@ extern "C" {
 #include <format>
 #include <thread>
 
+#if __has_include(<windows.h>)
+#include <Windows.h>
+
+static HANDLE mcHandle = nullptr;
+static HANDLE mcEvent = nullptr;
+#endif
+
 enum class Command : uint8_t {
     Ping = 0,
     DelayMicros = 1,
@@ -22,8 +29,6 @@ enum class Command : uint8_t {
 static LK_Chromatic_data_callback
     PAPI_SendToFlashGBX = nullptr,
     PAPI_RecvFromFlashGBX = nullptr,
-    PAPI_SendToDevice = nullptr,
-    PAPI_RecvFromDevice = nullptr,
     PAPI_OnError = nullptr;
 
 template<class... Args>
@@ -31,6 +36,9 @@ void LogError(std::format_string<Args...> fmt, Args&&... args) {
     const auto s = std::vformat(fmt.get(), std::make_format_args(args...));
     PAPI_OnError((uint8_t*)s.data(), s.length());
 }
+
+static void MC_Write(const void*, uint16_t count);
+static void MC_Read(void*, uint16_t count);
 
 static bool asyncEnabled = false;
 static uint8_t asyncBuffer[65536];
@@ -60,9 +68,9 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     const auto commandCount = txCount / 3;
     const auto rxCount = commandCount * 2;
 
-    PAPI_SendToDevice(asyncBuffer, asyncBufferIt - asyncBuffer);
+    MC_Write(asyncBuffer, asyncBufferIt - asyncBuffer);
     memset(asyncBuffer, 0, std::size(asyncBuffer));
-    PAPI_RecvFromDevice(asyncBuffer, rxCount);
+    MC_Read(asyncBuffer, rxCount);
 
     const auto begin = asyncBuffer;
     const auto end = asyncBuffer + rxCount;
@@ -96,7 +104,7 @@ static void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8
     if (asyncEnabled) {
         asyncBufferIt += 3;
     } else {
-        PAPI_SendToDevice(buffer, 3);
+        MC_Write(buffer, 3);
     }
 }
 
@@ -105,14 +113,15 @@ static void SendToDevice16(const Command cmd, const uint16_t arg16) {
 }
 
 template<Command T>
-static [[nodiscard]] uint8_t RecvFromDevice() {
+[[nodiscard]]
+static uint8_t RecvFromDevice() {
     if (asyncEnabled) {
         return 0xFF;
     }
 
     static constexpr auto Expected = static_cast<uint8_t>(T);
     uint8_t buffer[2];
-    PAPI_RecvFromDevice(buffer, 2);
+    MC_Read(buffer, 2);
     if (buffer[0] != Expected) [[unlikely]] {
         LogError("Response did not match command: expected '{}', got '{}' ({:#06x})",
             Expected,
@@ -217,11 +226,44 @@ extern "C" LK_CHROMATIC_EXPORT void papi_entrypoint(uint8_t command) {
     lk_loop(command);
 }
 
-#define CALLBACK(NAME, STORAGE) \
+extern "C" LK_CHROMATIC_EXPORT void papi_set_native_handle(void* handle) {
+    mcHandle = handle;
+    if (!mcEvent) {
+        mcEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    }
+}
+
+#define PAPI_CALLBACK(NAME, STORAGE) \
   extern "C" LK_CHROMATIC_EXPORT void papi_set_##NAME##_callback(LK_Chromatic_data_callback cb) { PAPI_##STORAGE = cb; }
 
-CALLBACK(send_to_flashgbx, SendToFlashGBX)
-CALLBACK(recv_from_flashgbx, RecvFromFlashGBX)
-CALLBACK(send_to_device, SendToDevice)
-CALLBACK(recv_from_device, RecvFromDevice)
-CALLBACK(on_error, OnError)
+PAPI_CALLBACK(send_to_flashgbx, SendToFlashGBX)
+PAPI_CALLBACK(recv_from_flashgbx, RecvFromFlashGBX)
+PAPI_CALLBACK(on_error, OnError)
+
+///// Serial API /////
+
+static void MC_Write(const void* const data, const uint16_t count) {
+    if (count == 0) {
+        return;
+    }
+
+    OVERLAPPED o { .hEvent = mcEvent };
+    WriteFile(mcHandle, data, count, nullptr, &o);
+    DWORD transferred {};
+    if (!GetOverlappedResult(mcHandle, &o, &transferred, TRUE)) [[unlikely]] {
+        LogError("Failed to write to device - {} of {} bytes, result {}", transferred, count, GetLastError());
+    }
+}
+
+static void MC_Read(void* const data, uint16_t const count) {
+    if (count == 0) {
+        return;
+    }
+
+    OVERLAPPED o { .hEvent = mcEvent };
+    ReadFile(mcHandle, data, count, nullptr, &o);
+    DWORD transferred {};
+    if (!GetOverlappedResult(mcHandle, &o, &transferred, TRUE)) [[unlikely]] {
+        LogError("Failed to read from device - {} of {} bytes, result {}", transferred, count, GetLastError());
+    }
+}
