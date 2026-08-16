@@ -73,7 +73,7 @@ RingBuffer<65536> toFlashGBX;
 enum class Command : uint8_t {
     Ping = 0,
     DelayMicros = 1,
-    DelayNanos = 2,
+    DelayTicks = 2,
     SetPins = 3,
     SetOutputEnable = 4,
     SetAddress = 5,
@@ -105,7 +105,7 @@ static bool tailIsSetPins() {
 static void mergeSetPins(uint8_t pins, uint8_t values) {
     const auto p = asyncBufferIt - 3;
     p[1] |= pins;
-    p[2] |= (p[2] & ~pins) | (values & pins);
+    p[2] = (p[2] & ~pins) | (values & pins);
 }
 
 extern "C" void LK_Chromatic_async_start() {
@@ -119,21 +119,37 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     const auto txCount = asyncBufferIt - asyncBuffer;
     const auto commandCount = txCount / 3;
     const auto rxCount = commandCount * 2;
+    static uint8_t responseBuffer[65536];
 
-    MC_Write(asyncBuffer, asyncBufferIt - asyncBuffer);
-    memset(asyncBuffer, 0, std::size(asyncBuffer));
-    MC_Read(asyncBuffer, rxCount);
+    auto submitted = std::min<uint16_t>(commandCount, 510);
+    MC_Write(asyncBuffer, submitted * 3);
+    auto pending = submitted;
+    uint16_t read = 0;
 
-    const auto begin = asyncBuffer;
-    const auto end = asyncBuffer + rxCount;
+    while (pending) {
+        const auto to_read = std::min<uint16_t>(255, pending);
+        MC_Read(responseBuffer + (read * 2), to_read * 2);
+        read += to_read;
+        pending -= to_read;
+
+        if (submitted < commandCount) {
+            const auto to_write = std::min<uint16_t>(to_read, commandCount - submitted);
+            MC_Write(asyncBuffer + (submitted * 3), to_write * 3);
+            pending += to_write;
+            submitted += to_write;
+        }
+    }
+
+    const auto begin = responseBuffer;
+    const auto end = responseBuffer + rxCount;
     uint16_t count = 0;
     for (auto packetIt = begin; packetIt != end; packetIt = &packetIt[2]) {
         if (packetIt[0] == static_cast<uint8_t>(Command::GetData)) {
+            ++count;
             if (count > len) {
                 LogError("Too many data bytes - expected {}", count);
                 return;
             }
-            ++count;
             if (data) {
                 *data = packetIt[1];
                 ++data;
@@ -214,11 +230,14 @@ extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
     return RecvFromDevice<Command::GetData>();
 }
 
-extern "C" void LK_Chromatic_DELAY_NANOS(const uint16_t duration) {
+extern "C" void LK_Chromatic_DELAY_TICKS(const uint8_t ticks) {
     if (asyncEnabled) {
-        SendToDevice16(Command::DelayNanos, duration);
-    } else {
-        std::this_thread::sleep_for(std::chrono::nanoseconds(duration));
+        SendToDevice16(Command::DelayTicks, ticks);
+    } else if (ticks) {
+        // While we don't have the same '2 ticks always' overhead, every command
+        // - including the one after the delay - gets a bunch more going through
+        // the USB stack and the FIFOs on the FPGA, so no correction needed
+        std::this_thread::sleep_for(std::chrono::nanoseconds(ticks));
     }
 }
 
@@ -319,11 +338,19 @@ static void MC_Write(const void* const data, const uint16_t count) {
         return;
     }
 
-    OVERLAPPED o { .hEvent = mcEvent };
-    WriteFile(mcHandle, data, count, nullptr, &o);
-    DWORD transferred {};
-    if (!GetOverlappedResult(mcHandle, &o, &transferred, TRUE)) [[unlikely]] {
-        LogError("Failed to write to device - {} of {} bytes, result {}", transferred, count, GetLastError());
+    auto p = static_cast<const uint8_t*>(data);
+    auto remaining = count;
+
+    while (remaining) {
+        OVERLAPPED o { .hEvent = mcEvent };
+        WriteFile(mcHandle, p, remaining, nullptr, &o);
+        DWORD transferred {};
+        if (!GetOverlappedResult(mcHandle, &o, &transferred, TRUE)) [[unlikely]] {
+            LogError("Failed to write to device - {} of {} bytes, result {}", transferred, count, GetLastError());
+            return;
+        }
+        remaining -= transferred;
+        p += transferred;
     }
 }
 
@@ -332,10 +359,18 @@ static void MC_Read(void* const data, uint16_t const count) {
         return;
     }
 
-    OVERLAPPED o { .hEvent = mcEvent };
-    ReadFile(mcHandle, data, count, nullptr, &o);
-    DWORD transferred {};
-    if (!GetOverlappedResult(mcHandle, &o, &transferred, TRUE)) [[unlikely]] {
-        LogError("Failed to read from device - {} of {} bytes, result {}", transferred, count, GetLastError());
+    auto p = static_cast<uint8_t*>(data);
+    auto remaining = count;
+
+    while (remaining) {
+        OVERLAPPED o { .hEvent = mcEvent };
+        ReadFile(mcHandle, p, remaining, nullptr, &o);
+        DWORD transferred {};
+        if (!GetOverlappedResult(mcHandle, &o, &transferred, TRUE)) [[unlikely]] {
+            LogError("Failed to read from device - {} of {} bytes, result {}", transferred, count, GetLastError());
+            return;
+        }
+        remaining -= transferred;
+        p += transferred;
     }
 }
