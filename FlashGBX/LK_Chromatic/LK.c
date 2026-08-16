@@ -1132,7 +1132,7 @@ void lk_dmg_cart_read_data(void) {
 	RAW_DMG_DATA_DIR_IN();
 	u16 left = _lk_var16[LK_VAR16_TRANSFER_SIZE];
 	while (left > 0) {
-        LK_Chromatic_async_start();
+		LK_Chromatic_async_start();
 
 		u16 chunk_len = left > CHUNK_MAX_LEN ? CHUNK_MAX_LEN : left;
 
@@ -1165,7 +1165,7 @@ void lk_dmg_cart_read_data(void) {
 				PIN_RD_H();
 			}
 		}
-        LK_Chromatic_async_flush(data_buffer, chunk_len);
+		LK_Chromatic_async_flush(data_buffer, chunk_len);
 
 		lk_conn_send(data_buffer, chunk_len);
 		left -= chunk_len;
