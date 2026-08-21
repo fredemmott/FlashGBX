@@ -23,6 +23,9 @@ class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
     LK_FW_VERSION = 15
 
+    USB_VENDOR_ID = 0x374e
+    USB_PRODUCT_ID = 0x0101
+
     _c_callbacks = []
 
     def __init__(self):
@@ -44,8 +47,8 @@ class GbxDevice(LK_Device):
         self._load_ffi()
 
     def _load_ffi(self):
-        self._lk.papi_set_native_handle.argtypes = [ctypes.c_void_p]
-        self._lk.papi_set_native_handle.restype = None
+        self._lk.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
+        self._lk.papi_open.restype = None
 
         self._lk.papi_flashgbx_write.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
         self._lk.papi_flashgbx_write.restype = None
@@ -83,7 +86,7 @@ class GbxDevice(LK_Device):
         else:
             comports = serial.tools.list_ports.comports()
             for i in range(0, len(comports)):
-                if comports[i].vid == 0x374E and comports[i].pid == 0x0101:
+                if comports[i].vid == self.USB_VENDOR_ID and comports[i].pid == self.USB_PRODUCT_ID:
                     ports.append(comports[i].device)
             if len(ports) == 0: return False
 
@@ -151,52 +154,41 @@ class GbxDevice(LK_Device):
             if b"FW L" in device_id:
                 dprint("Running dedicated firmware; no longer supported")
 
-            if device_id[0:5] != b"Micro":
-                dprint("Not running microcode firmware")
+            if device_id[0:5] == b"Micro":
+                dprint("Running custom microcode firmware; was never supported")
                 self.FW = None
                 return False
 
-            if len(device_id) != 12:
-                dprint("Running microcode firmware, but not a supported version")
+            if not device_id.startswith(b"fredemmott/FlashGBX\x00"):
+                dprint("Not running fredemmott/FlashGBX firmware")
+                self.FW = None
+                return False
+
+
+            if len(device_id) != 28:
+                dprint("Running supported firmware, but not a supported version")
                 self.FW = None
                 return False
 
             # BCD
-            year = device_id[5:7].hex()
-            month = device_id[7:8].hex()
-            day = device_id[8:9].hex()
+            year = device_id[20:22].hex()
+            month = device_id[22:23].hex()
+            day = device_id[23:24].hex()
 
-            revision = device_id[9]
+            revision = device_id[24]
 
-            upstream_major = device_id[10]
-            upstream_minor = device_id[11]
+            upstream_major = device_id[25]
+            upstream_minor = device_id[26]
+            usb_interface = device_id[27]
 
             self.FW["fw_dt"] = f"{year}-{month}-{day}"
             self.FW["fw_ver/ChromaticDumper"] = f"{year}.{month}.{day}.{revision}"
             self.FW["fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
 
-            if self.FW["fw_ver/ChromaticDumper"] != "2026.06.03.1":
+            if self.FW["fw_ver/ChromaticDumper"] != "2026.08.18.0":
                 dprint("Running microcode firmware, but not a supported version")
                 self.FW = None
                 return False
-
-            self._write(bytearray(b'LK')) # Enable LK firmware
-            ack = self.DEVICE.read(2)
-            expected_ack = bytes(~b & 0xff for b in b'LK')
-            if ack != expected_ack:
-                dprint("Firmware mode was not enabled successfully")
-                self.FW = None
-                return False
-
-            # b"Micro2026060101"
-            #   012345678901234
-            #        ^^^^^^^^
-            self.FW["fw_dt"] = device_id[5:13].decode("ascii")
-            year = device_id[5:9].decode("ascii")
-            month = device_id[9:11].decode("ascii")
-            day = device_id[11:13].decode("ascii")
-            build = device_id[13:15].decode("ascii")
-            self._firmware_version = f"v{year}.{month}.{day}.{build}"
 
             self.FW["cfw_id"] = "L"
             self.FW["fw_ver"] = self.LK_FW_VERSION
@@ -210,11 +202,20 @@ class GbxDevice(LK_Device):
             self.FW["cart_power_ctrl"] = False
             self.FW["bootloader_reset"] = False
 
+            self._write(bytearray(b'\x55\xAA'))
+            time.sleep(0.01)
+            device_id_dup = self.DEVICE.read(self.DEVICE.in_waiting)
+            if device_id_dup != device_id:
+                raise Exception("Device ID mismatch")
+
+            self._write(bytearray(b'LK')) # Switch mode
+            time.sleep(0.10)
+            junk = self.DEVICE.read(self.DEVICE.in_waiting)
+
             self.DEVICE.__class__ = MicrocodeDevice
             cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk.papi_flashgbx_read, self._lk.papi_flashgbx_write)
-            h = self.DEVICE.native_handle()
-            if h is not None:
-                self._lk.papi_set_native_handle(h)
+
+            self._lk.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, usb_interface)
 
             return True
 

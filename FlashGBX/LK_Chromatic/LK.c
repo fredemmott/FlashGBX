@@ -1085,7 +1085,7 @@ u8 lk_dmg_cart_read_sram(u16 address) {
 	return data;
 }
 void lk_dmg_cart_write_byte(u32 address, u16 value) {
-    LK_Chromatic_async_start();
+    //LK_Chromatic_async_start();
 	// DMG-MMSA-JPN is very timing-sensitive and slower devices may cause too much delay, so
 	// the LK_VAR8_DMG_WRITE_CS_PULSE check is around everything and the entire code is duplicated.
 	if (_lk_var8[LK_VAR8_DMG_WRITE_CS_PULSE] == true) {
@@ -1123,7 +1123,7 @@ void lk_dmg_cart_write_byte(u32 address, u16 value) {
 		RAW_DMG_DATA_SET(0);
 		RAW_DMG_DATA_DIR_IN();
 	}
-    LK_Chromatic_async_flush(NULL, 0);
+//    LK_Chromatic_async_flush(NULL, 0);
 }
 void lk_dmg_cart_read_data(void) {
 	PIN_RD_L();
@@ -2266,7 +2266,6 @@ void lk_agb_read_gpio_rtc(void) {
 // This function should be called periodically in the main loop after calling lk_loop(), or via a timer.
 void lk_cart_power_off_proc() {
 	if (auto_off_timer_suspended) return;
-	if (_lk_var8[LK_VAR8_AUTO_POWEROFF_ENABLED] == 0) return;
 	if (_lk_var8[LK_VAR8_CART_POWERED] != true) return;
 	if (activity_done && (lk_runtime > activity_last_run + 10)) {
 		if (_lk_var8[LK_VAR8_CART_POWERED] == true) {

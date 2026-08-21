@@ -21,17 +21,21 @@
 
 #define dprint(s, ...) {}
 
-void LK_Chromatic_DELAY_TICKS(uint8_t);
+void LK_Chromatic_DELAY_100NS(uint8_t);
 void LK_Chromatic_DELAY_MICROS(uint16_t);
-// 59.605ns ticks, at least 1 tick between instructions. So, 60ns is implicit, and
-// a NOP is ~ 120ns. DELAY_TICKS(0) is a NOP
+// 60mhz = 16.667ns ticks, and 3 ticks per instruction; while a NOP takes 3 ticks,
+// given:
 //
-// actual nanos = (ticks + 2) * 59.605
-#define _delay_100ns()						LK_Chromatic_DELAY_TICKS(0) // ~ 119ns
-#define _delay_200ns()						LK_Chromatic_DELAY_TICKS(2) // ~ 238ns
-#define _delay_300ns()						LK_Chromatic_DELAY_TICKS(3) // ~ 298ns
-#define _delay_400ns()						LK_Chromatic_DELAY_TICKS(5) // ~ 417ns
-#define _delay_500ns()						LK_Chromatic_DELAY_TICKS(7) // ~ 536ns
+//     FOO, NOP, BAR
+//
+// ... there are at least 6 ticks between FOO executing and BAR executing
+//
+// So, we can ensure 100ns between instructions by queueing a single nop
+#define _delay_100ns()						LK_Chromatic_DELAY_100NS(1)
+#define _delay_200ns()						LK_Chromatic_DELAY_100NS(2)
+#define _delay_300ns()						LK_Chromatic_DELAY_100NS(3)
+#define _delay_400ns()						LK_Chromatic_DELAY_100NS(4)
+#define _delay_500ns()						LK_Chromatic_DELAY_100NS(5)
 #define _delay_us(us)						LK_Chromatic_DELAY_MICROS(us)
 #define _delay_ms(ms)						_delay_us(ms * 1000)
 #define _delay_dmg_slow_access()			_delay_us(2)
