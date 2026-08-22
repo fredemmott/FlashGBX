@@ -401,6 +401,10 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     static uint8_t responseBuffer[65536];
     memset(responseBuffer, 0, std::size(responseBuffer));
 
+    LARGE_INTEGER pcBegin {}, pcEnd {}, pcFreq {}, pcCpy {};
+    QueryPerformanceFrequency(&pcFreq);
+    QueryPerformanceCounter(&pcBegin);
+
     auto write = gDevice->write(asyncBuffer, txCount);
     const auto bytesRead = gDevice->read(responseBuffer, rxCount).wait();
     if (!bytesRead.has_value()) [[unlikely]] {
@@ -421,6 +425,8 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
         LogError("Incorrect TX length - expected {}, got {}", txCount, bytesWritten.value());
     }
 
+    QueryPerformanceCounter(&pcEnd);
+
     const auto begin = responseBuffer;
     const auto end = responseBuffer + rxCount;
     uint16_t count = 0;
@@ -437,9 +443,21 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
             }
         }
     }
+    QueryPerformanceCounter(&pcCpy);
     if (count != len) {
         LogError("Incorrect data length - expected {}, got {}", len, count);
     }
+
+    dprint(
+        "Batch perf: {},{},{},{},{},{},{}",
+        txCount,
+        rxCount,
+        len,
+        pcFreq.QuadPart,
+        pcBegin.QuadPart,
+        pcEnd.QuadPart,
+        pcCpy.QuadPart);
+
 }
 
 extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
