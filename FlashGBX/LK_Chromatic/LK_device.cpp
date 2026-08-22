@@ -17,60 +17,116 @@ extern "C" {
 
 #if __has_include(<windows.h>)
 #include <Windows.h>
+#include <TraceLoggingProvider.h>
+#include <TraceLoggingActivity.h>
 //#define LK_WIN32_PERF_LOGGING
 #endif
 
 namespace {
+
+TRACELOGGING_DEFINE_PROVIDER(
+    gTL,
+    "LK_Chromatic",
+    (0x72b32b32, 0x28c9, 0x4298, 0xa4, 0x84, 0xc3, 0x85, 0xdd, 0xda, 0xa2, 0x1f));
+
+template<class... Args>
+void dprint(std::format_string<Args...> fmt, Args&&... args) {
+    auto s = std::vformat(fmt.get(), std::make_format_args(args...));
+    s += '\n';
+    OutputDebugStringA(s.c_str());
+}
+
+
 template<std::size_t N>
-class RingBuffer final {
-public:
-    void write(const void* data, std::size_t count) {
-        const auto idx = _writeIndex;
-        const auto firstCount = std::min(N - idx, count);
+struct ContiguousSPSCStream {
+    ContiguousSPSCStream(const ContiguousSPSCStream&) = delete;
+    ContiguousSPSCStream(ContiguousSPSCStream&&) = delete;
+    ContiguousSPSCStream& operator=(const ContiguousSPSCStream&) = delete;
+    ContiguousSPSCStream& operator=(ContiguousSPSCStream&&) = delete;
 
-        if (firstCount) {
-            memcpy(&_buffer[idx], data, firstCount);
-        }
-        if (firstCount != count) {
-            memcpy(&_buffer[0], static_cast<const uint8_t*>(data) + firstCount, count - firstCount);
-        }
-
-        _writeIndex= (idx + count) % N;
+    explicit ContiguousSPSCStream(const char* const label) : _label(label) {
     }
 
-    void read(void* data, const std::size_t count) {
-        std::size_t bytesRead = 0;
-        const auto it = static_cast<uint8_t*>(data);
+    template<std::invocable<uint8_t*, std::size_t> Fn>
+    void write(const std::size_t count, Fn&& f) {
+        TraceLoggingThreadActivity<gTL> tla;
+        TraceLoggingWriteStart(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
 
-        while (bytesRead < count) {
-            while (_writeIndex == _readIndex) {
-                _mm_pause();
-            }
+        const auto offset = _writePos.load(std::memory_order_relaxed);
+        std::invoke(std::forward<Fn>(f),_buffer.data() + offset, count);
+        _writePos.store(offset + count, std::memory_order_release);
+        _writePos.notify_one();
+        TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
 
-            std::size_t available = 0;
-            if (_writeIndex >= _readIndex) {
-                available = _writeIndex - _readIndex;
-            } else {
-                available = N - _readIndex;
-            }
+    }
 
-            const auto toRead = std::min(available, count - bytesRead);
-            if (toRead > 0) {
-                if (data) {
-                    memcpy(it + bytesRead, &_buffer[_readIndex], toRead);
+    void read(uint8_t* const dest, const std::size_t count) {
+        // can't be cancelled if we don't have a stop_token
+        std::ignore = read(dest, count, {});
+    }
+
+    [[nodiscard]]
+    bool read(uint8_t* const dest, const std::size_t count, std::stop_token cancel) {
+        TraceLoggingThreadActivity<gTL> tla;
+        TraceLoggingWriteStart(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
+
+        const auto offset = _readPos.load(std::memory_order_relaxed);
+
+        const std::stop_callback stopCallback{cancel, [this] {
+            _writePos.notify_all();
+        }};
+
+        {
+            std::size_t writeOff {};
+
+            TraceLoggingThreadActivity<gTL> tlb;
+            TraceLoggingWriteStart(tlb, "Stream::read()/wait");
+            while (true) {
+                if (cancel.stop_requested()) {
+                    TraceLoggingWriteStop(tlb, "Stream::read()", TraceLoggingValue("stopped", "result"));
+                    break;
                 }
-                _readIndex = (_readIndex + toRead) % N;
-                bytesRead += toRead;
+
+                writeOff = _writePos.load(std::memory_order_acquire);
+                if (writeOff - offset >= count) {
+                    TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("OK", "result"));
+                    break;
+                }
+
+                _mm_pause();
+
+                //_writePos.wait(writeOff, std::memory_order_release);
             }
         }
+
+        std::memcpy(dest, _buffer.data() + offset, count);
+        _readPos.store(_readPos, std::memory_order_relaxed);
+        _readPos += count;
+        if (_readPos == _writePos) {
+            _readPos.store(0, std::memory_order_relaxed);
+            _writePos.store(0, std::memory_order_release);
+        }
+
+        TraceLoggingWriteStop(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
+
+        return true;
+    }
+
+    [[nodiscard]]
+    std::size_t pending_count() const {
+        return _writePos.load(std::memory_order_acquire) - _readPos.load(std::memory_order_acquire);
     }
 private:
-    std::array<uint8_t, N> _buffer;
-    std::size_t _readIndex {};
-    std::size_t _writeIndex {};
+    std::array<uint8_t, N> _buffer {};
+
+    std::atomic<std::size_t> _readPos {};
+    std::atomic<std::size_t> _writePos {};
+
+    const char* const _label;
 };
-RingBuffer<65536> fromFlashGBX;
-RingBuffer<65536> toFlashGBX;
+
+ContiguousSPSCStream<65536> fromFlashGBX("from-FlashGBX");
+ContiguousSPSCStream<65536> toFlashGBX("to-FlashGBX");;
 
 enum class Command : uint8_t {
     Ping = 0,
@@ -84,13 +140,6 @@ enum class Command : uint8_t {
 LK_Chromatic_data_callback PAPI_OnError = nullptr;
 
 template<class... Args>
-void dprint(std::format_string<Args...> fmt, Args&&... args) {
-    auto s = std::vformat(fmt.get(), std::make_format_args(args...));
-    s += '\n';
-    OutputDebugStringA(s.c_str());
-}
-
-template<class... Args>
 void LogError(std::format_string<Args...> fmt, Args&&... args) {
     const auto s = std::vformat(fmt.get(), std::make_format_args(args...));
     dprint("LK_Chromatic error: {}", s);
@@ -98,13 +147,11 @@ void LogError(std::format_string<Args...> fmt, Args&&... args) {
 }
 
 struct [[nodiscard]] LibUSBTransfer {
-    LibUSBTransfer() = delete;
+    LibUSBTransfer() = default;
     LibUSBTransfer(const LibUSBTransfer&) = delete;
     LibUSBTransfer& operator=(LibUSBTransfer&) = delete;
 
     explicit LibUSBTransfer(libusb_context* const context) : _context(context) {
-        _state = std::make_unique<State>(State::Pending);
-
         _transfer = libusb_alloc_transfer(0);
     }
 
@@ -129,6 +176,9 @@ struct [[nodiscard]] LibUSBTransfer {
         unsigned char* buffer,
         int length,
         unsigned int timeout = 0) {
+
+        transition<State::Init, State::Filled>();
+
         libusb_fill_bulk_transfer(
             _transfer,
             device,
@@ -136,19 +186,23 @@ struct [[nodiscard]] LibUSBTransfer {
             buffer,
             length,
             &LibUSBTransfer::callback,
-            this->_state.get(),
+            &this->_completed,
             timeout);
     }
 
-    void submit() {
+    LibUSBTransfer& submit() {
+        transition<State::Filled, State::Submitted>();
+
         libusb_submit_transfer(_transfer);
+        return *this;
     }
 
     [[nodiscard]]
     std::expected<uint16_t, libusb_transfer_status> wait() noexcept {
-        while (*_state == State::Pending) {
-            libusb_handle_events(_context);
+        while (!_completed) {
+            libusb_handle_events_completed(_context, &_completed);
         }
+        this->transition<State::Submitted, State::Complete>();
         if (_transfer->status == LIBUSB_TRANSFER_COMPLETED) [[likely]] {
             return _transfer->actual_length;
         }
@@ -156,23 +210,52 @@ struct [[nodiscard]] LibUSBTransfer {
     }
 private:
     enum class State {
-        Pending,
+        Init,
+        Filled,
+        Submitted,
         Complete,
+        Moved,
     };
+
+    int _completed {};
 
     libusb_context* _context { nullptr };
     libusb_transfer* _transfer { nullptr };
 
-    std::unique_ptr<State> _state;
+    State _state { State::Init };
 
     static void callback(libusb_transfer* const t) {
-        *static_cast<State*>(t->user_data) = State::Complete;
+        *static_cast<int*>(t->user_data) = 1;
     }
 
     void moveFrom(LibUSBTransfer&& other) {
+        if (other._state == State::Submitted) [[unlikely]] {
+            dprint("Can't move a LibUSBTransfer which is in progress");
+            abort();
+        }
+        if (_state == State::Submitted) [[unlikely]] {
+            LogError("Can't move over a LibUSBTransfer which is in progress");
+            abort();
+        }
+
+        if (_transfer) {
+            libusb_free_transfer(_transfer);
+        }
+
         _context = std::exchange(other._context, nullptr);
         _transfer = std::exchange(other._transfer, nullptr);
-        _state = std::move(other._state);
+        _state = std::exchange(other._state, State::Moved);
+
+        _transfer->user_data = &_completed;
+    }
+
+    template<State T, State U>
+    void transition() {
+        if (_state != T) [[unlikely]] {
+            LogError("Invalid state transition: {} -> {}", std::to_underlying(_state), std::to_underlying(U));
+            abort();
+        }
+        _state = U;
     }
 };
 
@@ -227,7 +310,7 @@ struct LibUSBDevice {
         const auto expected = static_cast<uint8_t>(~ping_req[1]);
         dprint("Sending ping: {:#04x} -> {:#04x}", ping_req[1], expected);
         {
-            const auto bytesWritten = this->write(ping_req, sizeof(ping_req)).wait();
+            const auto bytesWritten = this->write(ping_req, sizeof(ping_req)).submit().wait();
             if (!bytesWritten.has_value()) {
                 LogError("Ping write failed: \"{}\" ({})", libusb_error_name(bytesWritten.error()), static_cast<int>(bytesWritten.error()));
                 return;
@@ -238,7 +321,7 @@ struct LibUSBDevice {
             }
         }
         {
-            const auto bytesRead = this->read(ping_reply, sizeof(ping_reply)).wait();
+            const auto bytesRead = this->read(ping_reply, sizeof(ping_reply)).submit().wait();
             if (!bytesRead.has_value()) {
                 LogError("Ping read failed: \"{}\" ({})", libusb_error_name(bytesRead.error()), static_cast<int>(bytesRead.error()));
                 return;
@@ -286,8 +369,7 @@ private:
     [[nodiscard]]
     LibUSBTransfer transfer(const uint8_t endpoint, void* data, const uint16_t count) const {
         auto ret = LibUSBTransfer { _context };
-        ret.fill(_device, endpoint, static_cast<uint8_t*>(data), count, 10 /* ms */);
-        ret.submit();
+        ret.fill(_device, endpoint, static_cast<uint8_t*>(data), count, 1000 /* ms */);
         return ret;
 
     }
@@ -364,12 +446,13 @@ void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8
     buf[1] = arg8a;
     buf[2] = arg8b;
 
-    const auto bytesWritten = gDevice->write(buf, 3).wait();
+    const auto bytesWritten = gDevice->write(buf, 3).submit().wait();
     if (!bytesWritten.has_value()) {
         LogError(
             "SendToDevice failed: \"{}\" ({})",
             libusb_strerror(bytesWritten.error()),
             static_cast<int>(bytesWritten.error()));
+        return;
     }
     if (bytesWritten.value() != 3) {
         LogError("SendToDevice failed: expected 3 bytes written, got {}", bytesWritten.value());
@@ -389,7 +472,7 @@ uint8_t RecvFromDevice() {
 
     static constexpr auto Expected = static_cast<uint8_t>(T);
     uint8_t buffer[2] {};
-    const auto bytesRead = gDevice->read(buffer, 2).wait();
+    const auto bytesRead = gDevice->read(buffer, 2).submit().wait();
     if (!bytesRead.has_value()) {
         LogError("RecvFromDevice failed: \"{}\" ({})", libusb_strerror(bytesRead.error()), static_cast<int>(bytesRead.error()));
         return 0;
@@ -428,6 +511,7 @@ void WaitForDevice() {
 extern "C" void LK_Chromatic_async_start() {
     gAsyncEnabled = true;
     gAsyncBuffer.clear();
+    TraceLoggingWrite(gTL, "LK_Chromatic_async_start()");
 }
 
 extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
@@ -436,35 +520,66 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     const auto commandCount = txCount / 3;
     const auto rxCount = commandCount * 2;
 
-    static std::vector<uint8_t> responseBuffer;
-    responseBuffer.clear();
-    responseBuffer.resize(rxCount);
+    TraceLoggingThreadActivity<gTL> tla;
+    TraceLoggingWriteStart(
+        tla,
+        "LK_Chromatic_async_flush()",
+        TraceLoggingValue(txCount, "txCount"),
+        TraceLoggingValue(rxCount, "rxCount"),
+        TraceLoggingValue(commandCount, "commandCount")
+    );
 
     LARGE_INTEGER pcBegin {}, pcEnd {}, pcFreq {}, pcCpy {};
     QueryPerformanceFrequency(&pcFreq);
     QueryPerformanceCounter(&pcBegin);
 
-    auto write = gDevice->write(gAsyncBuffer.data(), txCount);
-    const auto bytesRead = gDevice->read(responseBuffer.data(), rxCount).wait();
+    auto writeOp = gDevice->write(gAsyncBuffer.data(), txCount);
+    LibUSBTransfer readOp;
+
+    static std::basic_string<uint8_t> responseBuffer;
+    responseBuffer.clear();
+    responseBuffer.resize_and_overwrite(rxCount, [&readOp](uint8_t* const p, const std::size_t n) -> std::size_t {
+        readOp = gDevice->read(p, n);
+        return n;
+    });
+    readOp.submit();
+    writeOp.submit();
+
+    const auto [bytesRead, bytesWritten] = [&]
+    {
+        TraceLoggingThreadActivity<gTL> tlb;
+        TraceLoggingWriteStart(tlb, "LK_Chromatic_async_flush()/wait");
+        const auto bytesRead = readOp.wait();
+        const auto bytesWritten = writeOp.wait();
+        TraceLoggingWriteStop(tlb, "LK_Chromatic_async_flush()/wait");
+        return std::tuple { bytesRead, bytesWritten };
+    }();
+
     if (!bytesRead.has_value()) [[unlikely]] {
         LogError("Failed RX: {}", static_cast<int>(bytesRead.error()));
+        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("RX-Error", "result"), TraceLoggingValue(std::to_underlying(bytesRead.error()), "error"));
         return;
     }
     if (bytesRead.value() != rxCount) {
         LogError("RX: expected {} bytes, got {}", rxCount, bytesRead.value());
+        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("RX-Count", "result"), TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesRead.value(), "actual"));
         return;
     }
 
-    const auto bytesWritten = write.wait();
     if (!bytesWritten.has_value()) [[unlikely]] {
         LogError("Failed TX: {}", static_cast<int>(bytesWritten.error()));
+        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("TX-Error", "result"), TraceLoggingValue(std::to_underlying(bytesWritten.error()), "error"));
         return;
     }
     if (bytesWritten.value() != txCount) [[unlikely]] {
         LogError("Incorrect TX length - expected {}, got {}", txCount, bytesWritten.value());
+        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("TX-Count", "result"), TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesWritten.value(), "actual"));
+        return;
     }
 
     QueryPerformanceCounter(&pcEnd);
+
+    TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/parse");
 
     uint16_t count = 0;
     for (auto it = responseBuffer.begin(); it != responseBuffer.end(); it += 2) {
@@ -484,6 +599,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     if (count != len) {
         LogError("Incorrect data length - expected {}, got {}", len, count);
     }
+    TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()");
 
 #ifdef LK_WIN32_PERF_LOGGING
     dprint(
@@ -564,7 +680,9 @@ extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
 }
 
 extern "C" void LK_Chromatic_CONN_SEND(uint8_t* data, uint16_t count) {
-    toFlashGBX.write(data, count);
+    toFlashGBX.write(count, [src = data](uint8_t* const dest, const std::size_t n) {
+        std::memcpy(dest, src, n);
+    });
 }
 
 extern "C" void LK_Chromatic_CONN_RECV(uint8_t* data, uint16_t count) {
@@ -574,7 +692,17 @@ extern "C" void LK_Chromatic_CONN_RECV(uint8_t* data, uint16_t count) {
 ///// Python API (PAPI) /////
 
 extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_read(uint8_t* data, uint16_t count) {
+    if (count == 0) {
+        return;
+    }
+
+    TraceLoggingThreadActivity<gTL> tla;
+    TraceLoggingWriteStart(tla, "papi_flashgbx_read()");
+
+
     toFlashGBX.read(data, count);
+
+    TraceLoggingWriteStop(tla, "papi_flashgbx_read()");
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, uint16_t count) {
@@ -582,20 +710,35 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, uint16_t 
         return;
     }
 
-    fromFlashGBX.write(data, count);
+    TraceLoggingThreadActivity<gTL> tla;
+    TraceLoggingWriteStart(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count"));
 
-    static bool haveWorker = false;
-    if (!std::exchange(haveWorker, true)) {
+    static std::atomic_flag haveWorker {};
+    if (!haveWorker.test_and_set()) {
         std::jthread {
-            [] {
-                while (true) {
+            [] (const std::stop_token& stop) {
+                while (!stop.stop_requested()) {
                     uint8_t cmd {};
-                    fromFlashGBX.read(&cmd, 1);
+                    {
+                        if (!fromFlashGBX.read(&cmd, 1, stop)) {
+                            haveWorker.clear();
+                            return;
+                        }
+                    }
+                    TraceLoggingThreadActivity<gTL> tla;
+                    TraceLoggingWriteStart(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
                     lk_loop(cmd);
+                    TraceLoggingWriteStop(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
                 }
             }
         }.detach();
     }
+
+    fromFlashGBX.write(count, [src = data](uint8_t* const dst, const std::size_t n) {
+        std::memcpy(dst, src, n);
+    });
+
+    TraceLoggingWriteStop(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count"));
 }
 
 
@@ -611,4 +754,21 @@ extern "C" LK_CHROMATIC_EXPORT void papi_close() {
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(LK_Chromatic_data_callback cb) {
     PAPI_OnError = cb;
+}
+
+BOOL WINAPI DllMain(HINSTANCE, const DWORD fdwReason, const LPVOID lpvReserved) {
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            TraceLoggingRegister(gTL);
+            break;
+        case DLL_PROCESS_DETACH:
+            if (lpvReserved != nullptr) {
+                // No cleanup on process exit
+                break;
+            }
+            TraceLoggingUnregister(gTL);
+            break;
+        default: break;
+    }
+    return TRUE;
 }
