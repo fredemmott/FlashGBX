@@ -1,4 +1,3 @@
-#include <future>
 extern "C" {
 #include "LK_device.h"
 #undef dprint
@@ -11,12 +10,14 @@ extern "C" {
 #include <expected>
 #include <format>
 #include <functional>
+#include <future>
 #include <thread>
 #include <optional>
 #include <libusb.h>
 
 #if __has_include(<windows.h>)
 #include <Windows.h>
+//#define LK_WIN32_PERF_LOGGING
 #endif
 
 namespace {
@@ -296,36 +297,74 @@ using Device = LibUSBDevice;
 
 std::optional<Device> gDevice;
 
-bool asyncEnabled = false;
-uint8_t asyncBuffer[65536];
-uint8_t* asyncBufferIt;
+struct CommandBuffer {
+    CommandBuffer(const CommandBuffer&) = delete;
+    CommandBuffer(CommandBuffer&&) = delete;
+    CommandBuffer& operator=(const CommandBuffer&) = delete;
+    CommandBuffer& operator=(CommandBuffer&&) = delete;
 
-bool tailIsSetPins() {
-    if (!asyncEnabled) return false;
-    if (asyncBufferIt == asyncBuffer) return false;
-    const auto p = asyncBufferIt - 3;
-    return *p == static_cast<uint8_t>(Command::SetPins);
-}
-void mergeSetPins(uint8_t pins, uint8_t values) {
-    const auto p = asyncBufferIt - 3;
-    p[1] |= pins;
-    p[2] = (p[2] & ~pins) | (values & pins);
-}
+    CommandBuffer() {
+        constexpr std::size_t InitialSize = 65536;
+        _begin = _end = static_cast<uint8_t*>(std::malloc(InitialSize));
+        _capacity = InitialSize;
+    }
+
+    ~CommandBuffer() {
+        std::free(_begin);
+    }
+
+    void push8(const Command cmd, const uint8_t arg8a, const uint8_t arg8b = 0) {
+        if (
+            const auto s = size();
+            s + 3 > _capacity) [[unlikely]] {
+            _begin = static_cast<uint8_t*>(std::realloc(_begin, _capacity * 2));
+            _capacity *= 2;
+            _end = _begin + s;
+        }
+
+        _end[0] = static_cast<std::underlying_type_t<Command>>(cmd);
+        _end[1] = arg8a;
+        _end[2] = arg8b;
+        _end += 3;
+    }
+
+    void clear() {
+        _end = _begin;
+    }
+
+    [[nodiscard]]
+    uint8_t* data() { return _begin; }
+    [[nodiscard]]
+    std::size_t size() const { return _end - _begin; }
+
+    [[nodiscard]]
+    uint8_t* begin() { return _begin; }
+
+    [[nodiscard]]
+    uint8_t* end() { return _end; }
+
+    private:
+        uint8_t* _begin {};
+        uint8_t* _end {};
+        std::size_t _capacity {};
+};
+
+bool gAsyncEnabled = false;
+CommandBuffer gAsyncBuffer;
 
 void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
-    uint8_t buffer[3];
-    uint8_t* p = asyncEnabled ? asyncBufferIt : buffer;
-
-    p[0] = static_cast<std::underlying_type_t<Command>>(cmd);
-    p[1] = arg8a;
-    p[2] = arg8b;
-
-    if (asyncEnabled) {
-        asyncBufferIt += 3;
+    if (gAsyncEnabled) {
+        gAsyncBuffer.push8(cmd, arg8a, arg8b);
         return;
     }
 
-    const auto bytesWritten = gDevice->write(buffer, 3).wait();
+    static uint8_t buf[3];
+
+    buf[0] = static_cast<std::underlying_type_t<Command>>(cmd);
+    buf[1] = arg8a;
+    buf[2] = arg8b;
+
+    const auto bytesWritten = gDevice->write(buf, 3).wait();
     if (!bytesWritten.has_value()) {
         LogError(
             "SendToDevice failed: \"{}\" ({})",
@@ -344,7 +383,7 @@ void SendToDevice16(const Command cmd, const uint16_t arg16) {
 template<Command T>
 [[nodiscard]]
 uint8_t RecvFromDevice() {
-    if (asyncEnabled) {
+    if (gAsyncEnabled) {
         return 0xFF;
     }
 
@@ -373,7 +412,7 @@ uint8_t RecvFromDevice() {
 
 template<Command T>
 void WaitForDevice() {
-    if (asyncEnabled) {
+    if (gAsyncEnabled) {
         return;
     }
 
@@ -387,26 +426,26 @@ void WaitForDevice() {
 } // namespace
 
 extern "C" void LK_Chromatic_async_start() {
-    asyncEnabled = true;
-    asyncBufferIt = asyncBuffer;
-    memset(asyncBuffer, 0, std::size(asyncBuffer));
+    gAsyncEnabled = true;
+    gAsyncBuffer.clear();
 }
 
 extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
-    asyncEnabled = false;
-    const auto txCount = asyncBufferIt - asyncBuffer;
+    gAsyncEnabled = false;
+    const auto txCount = gAsyncBuffer.size();
     const auto commandCount = txCount / 3;
     const auto rxCount = commandCount * 2;
 
-    static uint8_t responseBuffer[65536];
-    memset(responseBuffer, 0, std::size(responseBuffer));
+    static std::vector<uint8_t> responseBuffer;
+    responseBuffer.clear();
+    responseBuffer.resize(rxCount);
 
     LARGE_INTEGER pcBegin {}, pcEnd {}, pcFreq {}, pcCpy {};
     QueryPerformanceFrequency(&pcFreq);
     QueryPerformanceCounter(&pcBegin);
 
-    auto write = gDevice->write(asyncBuffer, txCount);
-    const auto bytesRead = gDevice->read(responseBuffer, rxCount).wait();
+    auto write = gDevice->write(gAsyncBuffer.data(), txCount);
+    const auto bytesRead = gDevice->read(responseBuffer.data(), rxCount).wait();
     if (!bytesRead.has_value()) [[unlikely]] {
         LogError("Failed RX: {}", static_cast<int>(bytesRead.error()));
         return;
@@ -427,18 +466,16 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
 
     QueryPerformanceCounter(&pcEnd);
 
-    const auto begin = responseBuffer;
-    const auto end = responseBuffer + rxCount;
     uint16_t count = 0;
-    for (auto packetIt = begin; packetIt != end; packetIt += 2) {
-        if (packetIt[0] == static_cast<uint8_t>(Command::GetData)) {
+    for (auto it = responseBuffer.begin(); it != responseBuffer.end(); it += 2) {
+        if (it[0] == static_cast<uint8_t>(Command::GetData)) {
             ++count;
             if (count > len) {
                 LogError("Too many data bytes - expected {}", count);
                 return;
             }
             if (data) {
-                *data = packetIt[1];
+                *data = it[1];
                 ++data;
             }
         }
@@ -448,6 +485,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
         LogError("Incorrect data length - expected {}, got {}", len, count);
     }
 
+#ifdef LK_WIN32_PERF_LOGGING
     dprint(
         "Batch perf: {},{},{},{},{},{},{}",
         txCount,
@@ -457,7 +495,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
         pcBegin.QuadPart,
         pcEnd.QuadPart,
         pcCpy.QuadPart);
-
+#endif
 }
 
 extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
@@ -478,7 +516,7 @@ extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
 }
 
 extern "C" void LK_Chromatic_DELAY_100NS(const uint8_t count) {
-    if (asyncEnabled) {
+    if (gAsyncEnabled) {
         for (uint8_t i = 0; i < count; ++i) {
             SendToDevice(Command::Ping, i);
             std::ignore = RecvFromDevice<Command::Ping>();
@@ -489,7 +527,7 @@ extern "C" void LK_Chromatic_DELAY_100NS(const uint8_t count) {
 }
 
 extern "C" void LK_Chromatic_DELAY_MICROS(const uint16_t duration) {
-    if (asyncEnabled) {
+    if (gAsyncEnabled) {
         LogError("DELAY_MICROS should not be called in an async batch");
     }
     std::this_thread::sleep_for(std::chrono::microseconds(duration));
@@ -498,12 +536,8 @@ extern "C" void LK_Chromatic_DELAY_MICROS(const uint16_t duration) {
 extern "C" void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high) {
     const uint8_t pins = (1 << pin);
     const uint8_t values = (high << pin);
-    if (tailIsSetPins()) {
-        mergeSetPins(pins, values);
-    } else {
-        SendToDevice(Command::SetPins, pins, values);
-        WaitForDevice<Command::SetPins>();
-    }
+    SendToDevice(Command::SetPins, pins, values);
+    WaitForDevice<Command::SetPins>();
 }
 
 extern "C" void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe) {
