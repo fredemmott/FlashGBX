@@ -1085,7 +1085,7 @@ u8 lk_dmg_cart_read_sram(u16 address) {
 	return data;
 }
 void lk_dmg_cart_write_byte(u32 address, u16 value) {
-    //LK_Chromatic_async_start();
+    LK_Chromatic_async_start();
 	// DMG-MMSA-JPN is very timing-sensitive and slower devices may cause too much delay, so
 	// the LK_VAR8_DMG_WRITE_CS_PULSE check is around everything and the entire code is duplicated.
 	if (_lk_var8[LK_VAR8_DMG_WRITE_CS_PULSE] == true) {
@@ -1123,7 +1123,7 @@ void lk_dmg_cart_write_byte(u32 address, u16 value) {
 		RAW_DMG_DATA_SET(0);
 		RAW_DMG_DATA_DIR_IN();
 	}
-//    LK_Chromatic_async_flush(NULL, 0);
+    LK_Chromatic_async_flush(NULL, 0);
 }
 void lk_dmg_cart_read_data(void) {
 	PIN_RD_L();
