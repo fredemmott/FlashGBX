@@ -32,10 +32,8 @@ class Device(serial.Serial):
     _write_from_flashgbx: Callable[[ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint16], None]
     _read_to_flashgbx: Callable[[ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint16], None]
 
-    def native_handle(self):
-        if sys.platform == "win32":
-            return self._port_handle
-        return None
+    def flush(self):
+        pass
 
     def lk_on_error(self, data: bytes) -> None:
         pass
@@ -66,27 +64,6 @@ class Device(serial.Serial):
     @property
     def in_waiting(self):
         return 0
-
-    def _usb_write(self, data) -> int | None:
-        count = super().write(data)
-        assert(count is not None)
-        assert(count == len(data))
-        return count
-    def _usb_read(self, size) -> bytes:
-        return super().read(size)
-
-    @property
-    def _usb_in_waiting(self):
-        return super().in_waiting
-
-    def _executor_main(self):
-        while self.is_open:
-            buf = self._from_flashgbx_queue.get()
-            if isinstance(buf, self.ShutdownSignal):
-                return
-
-            self._from_flashgbx_buf = buf[1:]
-            self._lk_entrypoint(buf[0])
 
     def reset_input_buffer(self):
         pass
