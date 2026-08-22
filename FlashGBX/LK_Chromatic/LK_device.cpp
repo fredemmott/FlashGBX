@@ -19,6 +19,7 @@ extern "C" {
 #include <Windows.h>
 #endif
 
+namespace {
 template<std::size_t N>
 class RingBuffer final {
 public:
@@ -79,10 +80,10 @@ enum class Command : uint8_t {
     GetData = 5
 };
 
-static LK_Chromatic_data_callback PAPI_OnError = nullptr;
+LK_Chromatic_data_callback PAPI_OnError = nullptr;
 
 template<class... Args>
-static void dprint(std::format_string<Args...> fmt, Args&&... args) {
+void dprint(std::format_string<Args...> fmt, Args&&... args) {
     auto s = std::vformat(fmt.get(), std::make_format_args(args...));
     s += '\n';
     OutputDebugStringA(s.c_str());
@@ -204,7 +205,7 @@ struct LibUSBDevice {
 
         if (const auto err = libusb_claim_interface(_device, interfaceNumber); err != LIBUSB_SUCCESS) {
             _interface.reset();
-                LogError("Failed to claim interface: \"{}\" ({})", libusb_strerror(err), err);
+            LogError("Failed to claim interface: \"{}\" ({})", libusb_strerror(err), err);
             // Expected on Win32
             if (err != LIBUSB_ERROR_NOT_SUPPORTED) {
                 return;
@@ -224,8 +225,28 @@ struct LibUSBDevice {
         uint8_t ping_reply[2] {};
         const auto expected = static_cast<uint8_t>(~ping_req[1]);
         dprint("Sending ping: {:#04x} -> {:#04x}", ping_req[1], expected);
-        std::ignore = this->write(ping_req, sizeof(ping_req)).wait();
-        std::ignore = this->read(ping_reply, sizeof(ping_reply)).wait();
+        {
+            const auto bytesWritten = this->write(ping_req, sizeof(ping_req)).wait();
+            if (!bytesWritten.has_value()) {
+                LogError("Ping write failed: \"{}\" ({})", libusb_error_name(bytesWritten.error()), static_cast<int>(bytesWritten.error()));
+                return;
+            }
+            if (bytesWritten.value() != 3) {
+                LogError("Ping write failed: expected 3 bytes, got {}", bytesWritten.value());
+                return;
+            }
+        }
+        {
+            const auto bytesRead = this->read(ping_reply, sizeof(ping_reply)).wait();
+            if (!bytesRead.has_value()) {
+                LogError("Ping read failed: \"{}\" ({})", libusb_error_name(bytesRead.error()), static_cast<int>(bytesRead.error()));
+                return;
+            }
+            if (bytesRead.value() != 2) {
+                LogError("Ping read failed: expected 2 bytes, got {}", bytesRead.value());
+                return;
+            }
+        }
         if ((ping_reply[0] != std::bit_cast<uint8_t>(Command::Ping)) || (ping_reply[1] != expected)) {
             LogError("LK_Chromatic: Ping response command mismatch - received {:#06x}, expected {:#06x}", (static_cast<uint16_t>(ping_reply[0]) << 8) | ping_reply[1], expected);
             return;
@@ -273,23 +294,97 @@ private:
 
 using Device = LibUSBDevice;
 
-static std::optional<Device> gDevice;
+std::optional<Device> gDevice;
 
-static bool asyncEnabled = false;
-static uint8_t asyncBuffer[65536];
-static uint8_t* asyncBufferIt;
+bool asyncEnabled = false;
+uint8_t asyncBuffer[65536];
+uint8_t* asyncBufferIt;
 
-static bool tailIsSetPins() {
+bool tailIsSetPins() {
     if (!asyncEnabled) return false;
     if (asyncBufferIt == asyncBuffer) return false;
     const auto p = asyncBufferIt - 3;
     return *p == static_cast<uint8_t>(Command::SetPins);
 }
-static void mergeSetPins(uint8_t pins, uint8_t values) {
+void mergeSetPins(uint8_t pins, uint8_t values) {
     const auto p = asyncBufferIt - 3;
     p[1] |= pins;
     p[2] = (p[2] & ~pins) | (values & pins);
 }
+
+void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
+    uint8_t buffer[3];
+    uint8_t* p = asyncEnabled ? asyncBufferIt : buffer;
+
+    p[0] = static_cast<std::underlying_type_t<Command>>(cmd);
+    p[1] = arg8a;
+    p[2] = arg8b;
+
+    if (asyncEnabled) {
+        asyncBufferIt += 3;
+        return;
+    }
+
+    const auto bytesWritten = gDevice->write(buffer, 3).wait();
+    if (!bytesWritten.has_value()) {
+        LogError(
+            "SendToDevice failed: \"{}\" ({})",
+            libusb_strerror(bytesWritten.error()),
+            static_cast<int>(bytesWritten.error()));
+    }
+    if (bytesWritten.value() != 3) {
+        LogError("SendToDevice failed: expected 3 bytes written, got {}", bytesWritten.value());
+    }
+}
+
+void SendToDevice16(const Command cmd, const uint16_t arg16) {
+    SendToDevice(cmd, static_cast<uint8_t>(arg16 >> 8), static_cast<uint8_t>(arg16 & 0xFF));
+}
+
+template<Command T>
+[[nodiscard]]
+uint8_t RecvFromDevice() {
+    if (asyncEnabled) {
+        return 0xFF;
+    }
+
+    static constexpr auto Expected = static_cast<uint8_t>(T);
+    uint8_t buffer[2] {};
+    const auto bytesRead = gDevice->read(buffer, 2).wait();
+    if (!bytesRead.has_value()) {
+        LogError("RecvFromDevice failed: \"{}\" ({})", libusb_strerror(bytesRead.error()), static_cast<int>(bytesRead.error()));
+        return 0;
+    }
+    if (bytesRead.value() != 2) {
+        LogError("RecvFromDevice failed: expected 2 bytes read, got {}", bytesRead.value());
+        return 0;
+    }
+
+    if (buffer[0] != Expected) [[unlikely]] {
+        LogError("Response did not match command: expected '{}', got '{}' ({:#06x})",
+            Expected,
+            buffer[0],
+            (buffer[0] << 8) | buffer[1]
+        );
+        return 0;
+    }
+    return buffer[1];
+}
+
+template<Command T>
+void WaitForDevice() {
+    if (asyncEnabled) {
+        return;
+    }
+
+    const auto result = RecvFromDevice<T>();
+    if (result != 1) [[unlikely]] {
+        LogError("Expected ack (1), got {}", result);
+    }
+}
+
+
+} // namespace
 
 extern "C" void LK_Chromatic_async_start() {
     asyncEnabled = true;
@@ -302,26 +397,22 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     const auto txCount = asyncBufferIt - asyncBuffer;
     const auto commandCount = txCount / 3;
     const auto rxCount = commandCount * 2;
+
     static uint8_t responseBuffer[65536];
+    memset(responseBuffer, 0, std::size(responseBuffer));
 
     auto write = gDevice->write(asyncBuffer, txCount);
-    
-    uint16_t bytesRead = 0;
-    while (bytesRead < rxCount) {
-        const auto chunk = gDevice->read(&responseBuffer[bytesRead], rxCount - bytesRead).wait();
-        if (!chunk.has_value()) [[unlikely]] {
-            LogError("Failed RX after {} bytes: {}", bytesRead, static_cast<int>(chunk.error()));
-            return;
-        }
-        if (chunk.value() == 0) {
-            LogError("RX 0 bytes, wanted {}", rxCount - bytesRead);
-            return;
-        }
-        bytesRead += chunk.value();
+    const auto bytesRead = gDevice->read(responseBuffer, rxCount).wait();
+    if (!bytesRead.has_value()) [[unlikely]] {
+        LogError("Failed RX: {}", static_cast<int>(bytesRead.error()));
+        return;
+    }
+    if (bytesRead.value() != rxCount) {
+        LogError("RX: expected {} bytes, got {}", rxCount, bytesRead.value());
+        return;
     }
 
     const auto bytesWritten = write.wait();
-
     if (!bytesWritten.has_value()) [[unlikely]] {
         LogError("Failed TX: {}", static_cast<int>(bytesWritten.error()));
         return;
@@ -333,7 +424,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     const auto begin = responseBuffer;
     const auto end = responseBuffer + rxCount;
     uint16_t count = 0;
-    for (auto packetIt = begin; packetIt != end; packetIt = &packetIt[2]) {
+    for (auto packetIt = begin; packetIt != end; packetIt += 2) {
         if (packetIt[0] == static_cast<uint8_t>(Command::GetData)) {
             ++count;
             if (count > len) {
@@ -348,58 +439,6 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     }
     if (count != len) {
         LogError("Incorrect data length - expected {}, got {}", len, count);
-    }
-}
-
-static void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
-    uint8_t buffer[3];
-    uint8_t* p = asyncEnabled ? asyncBufferIt : buffer;
-
-    p[0] = static_cast<std::underlying_type_t<Command>>(cmd);
-    p[1] = arg8a;
-    p[2] = arg8b;
-
-    if (asyncEnabled) {
-        asyncBufferIt += 3;
-    } else {
-        std::ignore = gDevice->write(buffer, 3).wait();
-    }
-}
-
-static void SendToDevice16(const Command cmd, const uint16_t arg16) {
-    SendToDevice(cmd, static_cast<uint8_t>(arg16 >> 8), static_cast<uint8_t>(arg16 & 0xFF));
-}
-
-template<Command T>
-[[nodiscard]]
-static uint8_t RecvFromDevice() {
-    if (asyncEnabled) {
-        return 0xFF;
-    }
-
-    static constexpr auto Expected = static_cast<uint8_t>(T);
-    uint8_t buffer[2];
-    std::ignore = gDevice->read(buffer, 2).wait();
-    if (buffer[0] != Expected) [[unlikely]] {
-        LogError("Response did not match command: expected '{}', got '{}' ({:#06x})",
-            Expected,
-            buffer[0],
-            (buffer[0] << 8) | buffer[1]
-        );
-        return 0;
-    }
-    return buffer[1];
-}
-
-template<Command T>
-static void WaitForDevice() {
-    if (asyncEnabled) {
-        return;
-    }
-
-    const auto result = RecvFromDevice<T>();
-    if (result != 1) [[unlikely]] {
-        LogError("Expected ack (1), got {}", result);
     }
 }
 
