@@ -1,6 +1,6 @@
 extern "C" {
+#define LK_DEVICE_NO_DPRINT
 #include "LK_device.h"
-#undef dprint
 }
 
 #include "PAPI.hpp"
@@ -31,9 +31,8 @@ TRACELOGGING_DEFINE_PROVIDER(
 
 template<class... Args>
 void dprint(std::format_string<Args...> fmt, Args&&... args) {
-    auto s = std::vformat(fmt.get(), std::make_format_args(args...));
-    s += '\n';
-    OutputDebugStringA(s.c_str());
+    const auto s = std::vformat(fmt.get(), std::make_format_args(args...));
+    TraceLoggingWrite(gTL, "dprint", TraceLoggingCountedString(s.data(), s.size(), "message"));
 }
 
 
@@ -507,6 +506,21 @@ void WaitForDevice() {
 
 
 } // namespace
+
+extern "C" void LK_Chromatic_dprint(const char* const data, va_list args) {
+    static char buffer[1024];
+    const auto count = vsnprintf(buffer, sizeof(buffer), data, args);
+
+    std::string_view s { data, static_cast<std::size_t>(count) };
+    if (s.ends_with('\n')) {
+        s.remove_suffix(1);
+    }
+    if (s.ends_with('\r')) {
+        s.remove_suffix(1);
+    }
+
+    TraceLoggingWrite(gTL, "dprint-LK", TraceLoggingCountedString(s.data(), s.size(), "message"));
+}
 
 extern "C" void LK_Chromatic_async_start() {
     gAsyncEnabled = true;

@@ -10,6 +10,12 @@
 
 #include "LK.h"
 
+#ifdef __cplusplus
+#include <cstdarg>
+#else
+#include <stdarg.h>
+#endif
+
 #define HARDWARE_DEVICENAME
 
 #define LK_DEVICE_NAME 						"<Device Name>"
@@ -19,7 +25,16 @@
 #define LK_CART_PRESENCE_SWITCH_SUPPORT		false
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
-#define dprint(s, ...) {}
+void LK_Chromatic_dprint(const char*, va_list);
+
+#ifndef LK_DEVICE_NO_DPRINT
+inline void dprint(const char* const fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	LK_Chromatic_dprint(fmt, args);
+	va_end(args);
+}
+#endif
 
 void LK_Chromatic_DELAY_100NS(uint8_t);
 void LK_Chromatic_DELAY_MICROS(uint16_t);
