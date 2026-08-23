@@ -82,7 +82,7 @@ struct ContiguousSPSCStream {
             TraceLoggingWriteStart(tlb, "Stream::read()/wait");
             while (true) {
                 if (cancel.stop_requested()) {
-                    TraceLoggingWriteStop(tlb, "Stream::read()", TraceLoggingValue("stopped", "result"));
+                    TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("stopped", "result"));
                     break;
                 }
 
