@@ -569,25 +569,30 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
         return std::tuple { bytesRead, bytesWritten };
     }();
 
+    bool error = false;
+
     if (!bytesRead.has_value()) [[unlikely]] {
+        error = true;
         LogError("Failed RX: {}", static_cast<int>(bytesRead.error()));
-        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("RX-Error", "result"), TraceLoggingValue(std::to_underlying(bytesRead.error()), "error"));
-        return;
-    }
-    if (bytesRead.value() != rxCount) {
+        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/rx-error", TraceLoggingValue(std::to_underlying(bytesRead.error()), "error"));
+    } else if (bytesRead.value() != rxCount) {
+        error = true;
         LogError("RX: expected {} bytes, got {}", rxCount, bytesRead.value());
-        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("RX-Count", "result"), TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesRead.value(), "actual"));
-        return;
+        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/rx-count", TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesRead.value(), "actual"));
     }
 
     if (!bytesWritten.has_value()) [[unlikely]] {
+        error = true;
         LogError("Failed TX: {}", static_cast<int>(bytesWritten.error()));
-        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("TX-Error", "result"), TraceLoggingValue(std::to_underlying(bytesWritten.error()), "error"));
-        return;
-    }
-    if (bytesWritten.value() != txCount) [[unlikely]] {
+        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-error", TraceLoggingValue(std::to_underlying(bytesWritten.error()), "error"));
+    } else if (bytesWritten.value() != txCount) [[unlikely]] {
+        error = true;
         LogError("Incorrect TX length - expected {}, got {}", txCount, bytesWritten.value());
-        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("TX-Count", "result"), TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesWritten.value(), "actual"));
+        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-count", TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesWritten.value(), "actual"));
+    }
+
+    if (error) [[unlikely]] {
+        TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()", TraceLoggingValue("error", "result"));
         return;
     }
 
