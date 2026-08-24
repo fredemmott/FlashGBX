@@ -48,7 +48,11 @@ void lk_loop(u8 command) {
 		case LK_CMD_PING:
 			{
 				u8 value = lk_conn_recv_u8();
-				lk_conn_send_u8(~value);
+				// lk_conn_send_u8(~value);
+
+				// As LK 'firmware' is running on the host,
+				// explicitly ping the device
+				lk_conn_send_u8(LK_Chromatic_ping(value));
 			}
 			break;
 

@@ -330,43 +330,16 @@ struct LibUSBDevice {
         dprint("LK_Chromatic: Opened libusb device {:#06x}/{:#06x} interface {:#04x}: epIn: {:#04x}, epOut: {:#04x}", vendorID, productID, interfaceNumber,_epIn, _epOut);
 
         // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
-        const uint8_t ping_req[] {
-            std::bit_cast<uint8_t>(Command::Ping),
-            GetPingCookie(),
-            0x00
-        };
-        const auto expected = static_cast<uint8_t>(~ping_req[1]);
-        dprint("Sending ping: {:#04x} -> {:#04x}", ping_req[1], expected);
+        const auto cookie = GetPingCookie();
+        const auto expected = (~cookie) & 0xff;
 
-        {
-            const auto bytesWritten = this->write(ping_req, sizeof(ping_req)).submit().wait();
-            if (!bytesWritten.has_value()) {
-                LogError("Ping write failed: \"{}\" ({})", libusb_error_name(bytesWritten.error()), static_cast<int>(bytesWritten.error()));
-                return;
-            }
-            if (bytesWritten.value() != 3) {
-                LogError("Ping write failed: expected 3 bytes, got {}", bytesWritten.value());
-                return;
-            }
-        }
-
-        uint8_t ping_reply {};
-        {
-            const auto bytesRead = this->read(&ping_reply, 1).submit().wait();
-            if (!bytesRead.has_value()) {
-                LogError("Ping read failed: \"{}\" ({})", libusb_error_name(bytesRead.error()), static_cast<int>(bytesRead.error()));
-                return;
-            }
-            if (bytesRead.value() != 1) {
-                LogError("Ping read failed: expected 1 byte, got {}", bytesRead.value());
-                return;
-            }
-        }
-        if (ping_reply != expected) {
-            LogError("LK_Chromatic: Ping response command mismatch - received {:#04x}, expected {:#04x}", ping_reply, expected);
+        dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
+        const auto actual = LK_Chromatic_ping(cookie);
+        if (actual != expected) {
+            LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
             return;
         }
-        dprint("LK_Chromatic: Initial ping OK, {:#04x} -> {:#04x}", ping_reply, expected);
+        dprint("LK_Chromatic: Initial ping OK");
     }
 
     ~LibUSBDevice() {
@@ -549,6 +522,22 @@ uint8_t RecvFromDevice() {
 }
 
 } // namespace
+
+extern "C" uint8_t LK_Chromatic_ping(const uint8_t cookie) {
+    TraceLoggingThreadActivity<gTL> tla;
+    TraceLoggingWriteStart(tla, "LK_Chromatic_ping()", TraceLoggingHexUInt8(cookie, "cookie"));
+
+    if (gAsyncEnabled) [[unlikely]] {
+        TraceLoggingWriteTagged(tla, "LK_Chromatic_ping()/asyncEnabled");
+        abort();
+    }
+
+    SendToDevice(Command::Ping, cookie);
+    const auto ret = RecvFromDevice();
+
+    TraceLoggingWriteStop(tla, "LK_Chromatic_ping()", TraceLoggingHexUInt8(ret, "ret"));
+    return ret;
+}
 
 extern "C" void LK_Chromatic_dprint(const char* const data, va_list args) {
     static char buffer[1024];

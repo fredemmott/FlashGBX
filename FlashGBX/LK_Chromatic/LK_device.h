@@ -25,6 +25,8 @@
 #define LK_CART_PRESENCE_SWITCH_SUPPORT		false
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
+uint8_t LK_Chromatic_ping(uint8_t);
+
 void LK_Chromatic_dprint(const char*, va_list);
 
 #ifndef LK_DEVICE_NO_DPRINT
