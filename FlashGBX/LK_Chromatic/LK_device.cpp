@@ -150,7 +150,13 @@ struct [[nodiscard]] LibUSBTransfer {
     LibUSBTransfer(const LibUSBTransfer&) = delete;
     LibUSBTransfer& operator=(LibUSBTransfer&) = delete;
 
-    explicit LibUSBTransfer(libusb_context* const context) : _context(context) {
+    LibUSBTransfer(
+        libusb_device_handle* const device,
+        libusb_context* const context,
+        const uint8_t endpoint
+    ):
+        _device(device),
+        _context(context), _endpoint(endpoint) {
         _transfer = libusb_alloc_transfer(0);
     }
 
@@ -169,24 +175,30 @@ struct [[nodiscard]] LibUSBTransfer {
         return *this;
     }
 
-    void fill(
-        libusb_device_handle* device,
-        unsigned char endpoint,
+    LibUSBTransfer& fill(
         unsigned char* buffer,
         int length,
         unsigned int timeout = 0) {
 
-        transition<State::Init, State::Filled>();
+        if (const auto oldState = std::exchange(_state, State::Filled);
+            oldState != State::Init && oldState != State::Complete) [[unlikely]] {
+            LogError("Invalid state transition: {} -> {}", std::to_underlying(oldState), std::to_underlying(_state));
+            abort();
+        }
+
+        _libUSBCompletionFlag = 0;
 
         libusb_fill_bulk_transfer(
             _transfer,
-            device,
-            endpoint,
+            _device,
+            _endpoint,
             buffer,
             length,
             &LibUSBTransfer::callback,
-            &this->_completed,
+            &this->_libUSBCompletionFlag,
             timeout);
+
+        return *this;
     }
 
     LibUSBTransfer& submit() {
@@ -198,8 +210,8 @@ struct [[nodiscard]] LibUSBTransfer {
 
     [[nodiscard]]
     std::expected<uint16_t, libusb_transfer_status> wait() noexcept {
-        while (!_completed) {
-            libusb_handle_events_completed(_context, &_completed);
+        while (!_libUSBCompletionFlag) {
+            libusb_handle_events_completed(_context, &_libUSBCompletionFlag);
         }
         this->transition<State::Submitted, State::Complete>();
         if (_transfer->status == LIBUSB_TRANSFER_COMPLETED) [[likely]] {
@@ -216,9 +228,12 @@ private:
         Moved,
     };
 
-    int _completed {};
+    int _libUSBCompletionFlag {};
 
+    libusb_device_handle* _device { nullptr };
     libusb_context* _context { nullptr };
+    uint8_t _endpoint { 0 };
+
     libusb_transfer* _transfer { nullptr };
 
     State _state { State::Init };
@@ -241,11 +256,16 @@ private:
             libusb_free_transfer(_transfer);
         }
 
+        _device = std::exchange(other._device, nullptr);
         _context = std::exchange(other._context, nullptr);
-        _transfer = std::exchange(other._transfer, nullptr);
-        _state = std::exchange(other._state, State::Moved);
+        _endpoint = std::exchange(other._endpoint, 0);
 
-        _transfer->user_data = &_completed;
+        _transfer = std::exchange(other._transfer, nullptr);
+
+        _state = std::exchange(other._state, State::Moved);
+        _libUSBCompletionFlag = std::exchange(other._libUSBCompletionFlag, 0);
+
+        _transfer->user_data = &_libUSBCompletionFlag;
     }
 
     template<State T, State U>
@@ -356,6 +376,16 @@ struct LibUSBDevice {
         return this->transfer(_epIn, data, count);
     }
 
+    [[nodiscard]]
+    LibUSBTransfer makeWriteTransfer() {
+        return { _device, _context, _epOut };
+    }
+
+    [[nodiscard]]
+    LibUSBTransfer makeReadTransfer() {
+        return { _device, _context, _epIn };
+    }
+
 private:
     static constexpr unsigned int BufferSize = 65536;
 
@@ -367,8 +397,8 @@ private:
 
     [[nodiscard]]
     LibUSBTransfer transfer(const uint8_t endpoint, void* data, const uint16_t count) const {
-        auto ret = LibUSBTransfer { _context };
-        ret.fill(_device, endpoint, static_cast<uint8_t*>(data), count, 1000 /* ms */);
+        auto ret = LibUSBTransfer { _device, _context, endpoint};
+        ret.fill(static_cast<uint8_t*>(data), count, 1000 /* ms */);
         return ret;
 
     }
