@@ -19,7 +19,6 @@ extern "C" {
 #include <Windows.h>
 #include <TraceLoggingProvider.h>
 #include <TraceLoggingActivity.h>
-//#define LK_WIN32_PERF_LOGGING
 #endif
 
 namespace {
@@ -35,6 +34,15 @@ void dprint(std::format_string<Args...> fmt, Args&&... args) {
     TraceLoggingWrite(gTL, "dprint", TraceLoggingCountedString(s.data(), s.size(), "message"));
 }
 
+[[nodiscard]]
+uint8_t GetPingCookie() {
+    LARGE_INTEGER ret;
+    QueryPerformanceCounter(&ret);
+
+    // Fibonacci Hashing (TAOCP vol 3)
+    // Magic number approach to 1/golden ratio from RC5
+    return (ret.QuadPart * 0x9E3779B97F4A7C15ULL) >> 56;
+}
 
 template<std::size_t N>
 struct ContiguousSPSCStream {
@@ -128,12 +136,14 @@ ContiguousSPSCStream<65536> fromFlashGBX("from-FlashGBX");
 ContiguousSPSCStream<65536> toFlashGBX("to-FlashGBX");;
 
 enum class Command : uint8_t {
-    Ping = 0,
-    SetPins = 1,
-    SetOutputEnable = 2,
-    SetAddress = 3,
-    SetData = 4,
-    GetData = 5
+    NOP = 0,
+    Ping = 1,
+
+    SetPins = 2,
+    SetOutputEnable = 3,
+    SetAddress = 4,
+    SetData = 5,
+    GetData = 6
 };
 
 LK_Chromatic_data_callback PAPI_OnError = nullptr;
@@ -322,12 +332,12 @@ struct LibUSBDevice {
         // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
         const uint8_t ping_req[] {
             std::bit_cast<uint8_t>(Command::Ping),
-            static_cast<uint8_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count() & 0xff),
+            GetPingCookie(),
             0x00
         };
-        uint8_t ping_reply[2] {};
         const auto expected = static_cast<uint8_t>(~ping_req[1]);
         dprint("Sending ping: {:#04x} -> {:#04x}", ping_req[1], expected);
+
         {
             const auto bytesWritten = this->write(ping_req, sizeof(ping_req)).submit().wait();
             if (!bytesWritten.has_value()) {
@@ -339,22 +349,24 @@ struct LibUSBDevice {
                 return;
             }
         }
+
+        uint8_t ping_reply {};
         {
-            const auto bytesRead = this->read(ping_reply, sizeof(ping_reply)).submit().wait();
+            const auto bytesRead = this->read(&ping_reply, 1).submit().wait();
             if (!bytesRead.has_value()) {
                 LogError("Ping read failed: \"{}\" ({})", libusb_error_name(bytesRead.error()), static_cast<int>(bytesRead.error()));
                 return;
             }
-            if (bytesRead.value() != 2) {
-                LogError("Ping read failed: expected 2 bytes, got {}", bytesRead.value());
+            if (bytesRead.value() != 1) {
+                LogError("Ping read failed: expected 1 byte, got {}", bytesRead.value());
                 return;
             }
         }
-        if ((ping_reply[0] != std::bit_cast<uint8_t>(Command::Ping)) || (ping_reply[1] != expected)) {
-            LogError("LK_Chromatic: Ping response command mismatch - received {:#06x}, expected {:#06x}", (static_cast<uint16_t>(ping_reply[0]) << 8) | ping_reply[1], expected);
+        if (ping_reply != expected) {
+            LogError("LK_Chromatic: Ping response command mismatch - received {:#04x}, expected {:#04x}", ping_reply, expected);
             return;
         }
-        dprint("LK_Chromatic: Initial ping OK, {:#04x} -> {:#04x}", ping_reply[1], expected);
+        dprint("LK_Chromatic: Initial ping OK, {:#04x} -> {:#04x}", ping_reply, expected);
     }
 
     ~LibUSBDevice() {
@@ -425,18 +437,25 @@ struct CommandBuffer {
     }
 
     void push8(const Command cmd, const uint8_t arg8a, const uint8_t arg8b = 0) {
-        if (
-            const auto s = size();
-            s + 3 > _capacity) [[unlikely]] {
-            _begin = static_cast<uint8_t*>(std::realloc(_begin, _capacity * 2));
-            _capacity *= 2;
-            _end = _begin + s;
-        }
+        ensureCanAppend(3);
 
         _end[0] = static_cast<std::underlying_type_t<Command>>(cmd);
         _end[1] = arg8a;
         _end[2] = arg8b;
+
         _end += 3;
+    }
+
+    template<std::invocable<uint8_t*, uint16_t> Fn>
+    void pushBytes(const uint16_t count, Fn&& fn) {
+        if (count % 3) [[unlikely]] {
+            LogError("Attempted to push {} bytes, which is not a multiple of 3", count);
+            abort();
+        }
+        ensureCanAppend(count);
+
+        std::invoke(std::forward<Fn>(fn), _end, count);
+        _end += count;
     }
 
     void clear() {
@@ -454,14 +473,25 @@ struct CommandBuffer {
     [[nodiscard]]
     uint8_t* end() { return _end; }
 
-    private:
-        uint8_t* _begin {};
-        uint8_t* _end {};
-        std::size_t _capacity {};
+private:
+
+    uint8_t* _begin {};
+    uint8_t* _end {};
+    std::size_t _capacity {};
+
+    void ensureCanAppend(const std::size_t required) {
+        if (const auto s = size(); s + required > _capacity) [[unlikely]] {
+
+            _begin = static_cast<uint8_t*>(std::realloc(_begin, _capacity * 2));
+            _capacity *= 2;
+            _end = _begin + s;
+        }
+    }
 };
 
 bool gAsyncEnabled = false;
 CommandBuffer gAsyncBuffer;
+
 
 void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
     if (gAsyncEnabled) {
@@ -469,13 +499,18 @@ void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8
         return;
     }
 
-    static uint8_t buf[3];
+#pragma pack(push, 1)
+    static struct {
+        Command cmd {};
+        uint8_t arg8a {};
+        uint8_t arg8b {};
+    } request {};
+#pragma pack(pop)
+    request.cmd = cmd;
+    request.arg8a = arg8a;
+    request.arg8b = arg8b;
 
-    buf[0] = static_cast<std::underlying_type_t<Command>>(cmd);
-    buf[1] = arg8a;
-    buf[2] = arg8b;
-
-    const auto bytesWritten = gDevice->write(buf, 3).submit().wait();
+    const auto bytesWritten = gDevice->write(&request, sizeof(request)).submit().wait();
     if (!bytesWritten.has_value()) {
         LogError(
             "SendToDevice failed: \"{}\" ({})",
@@ -492,48 +527,26 @@ void SendToDevice16(const Command cmd, const uint16_t arg16) {
     SendToDevice(cmd, static_cast<uint8_t>(arg16 >> 8), static_cast<uint8_t>(arg16 & 0xFF));
 }
 
-template<Command T>
 [[nodiscard]]
 uint8_t RecvFromDevice() {
     if (gAsyncEnabled) {
         return 0xFF;
     }
 
-    static constexpr auto Expected = static_cast<uint8_t>(T);
-    uint8_t buffer[2] {};
-    const auto bytesRead = gDevice->read(buffer, 2).submit().wait();
-    if (!bytesRead.has_value()) {
+    uint8_t buffer;
+
+    const auto bytesRead = gDevice->read(&buffer, 1).submit().wait();
+    if (!bytesRead.has_value()) [[unlikely]] {
         LogError("RecvFromDevice failed: \"{}\" ({})", libusb_strerror(bytesRead.error()), static_cast<int>(bytesRead.error()));
         return 0;
     }
-    if (bytesRead.value() != 2) {
-        LogError("RecvFromDevice failed: expected 2 bytes read, got {}", bytesRead.value());
+    if (bytesRead.value() != 1) [[unlikely]] {
+        LogError("RecvFromDevice failed: expected 1 byte, got {}", bytesRead.value());
         return 0;
     }
 
-    if (buffer[0] != Expected) [[unlikely]] {
-        LogError("Response did not match command: expected '{}', got '{}' ({:#06x})",
-            Expected,
-            buffer[0],
-            (buffer[0] << 8) | buffer[1]
-        );
-        return 0;
-    }
-    return buffer[1];
+    return buffer;
 }
-
-template<Command T>
-void WaitForDevice() {
-    if (gAsyncEnabled) {
-        return;
-    }
-
-    const auto result = RecvFromDevice<T>();
-    if (result != 1) [[unlikely]] {
-        LogError("Expected ack (1), got {}", result);
-    }
-}
-
 
 } // namespace
 
@@ -558,11 +571,17 @@ extern "C" void LK_Chromatic_async_start() {
     TraceLoggingWrite(gTL, "LK_Chromatic_async_start()");
 }
 
-extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
+extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {
+    // Limited by device-side TX buffer
+    if (len > 4096) [[unlikely]] {
+        LogError("Can't flush more than 4096 bytes");
+        return;
+    }
+
     gAsyncEnabled = false;
     const auto txCount = gAsyncBuffer.size();
     const auto commandCount = txCount / 3;
-    const auto rxCount = commandCount * 2;
+    const auto rxCount = len;
 
     TraceLoggingThreadActivity<gTL> tla;
     TraceLoggingWriteStart(
@@ -570,22 +589,13 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
         "LK_Chromatic_async_flush()",
         TraceLoggingValue(txCount, "txCount"),
         TraceLoggingValue(rxCount, "rxCount"),
-        TraceLoggingValue(commandCount, "commandCount")
+        TraceLoggingValue(commandCount, "commandCount"),
+        TraceLoggingValue(len, "len")
     );
 
-    LARGE_INTEGER pcBegin {}, pcEnd {}, pcFreq {}, pcCpy {};
-    QueryPerformanceFrequency(&pcFreq);
-    QueryPerformanceCounter(&pcBegin);
-
     auto writeOp = gDevice->write(gAsyncBuffer.data(), txCount);
-    LibUSBTransfer readOp;
+    auto readOp = gDevice->read(data, rxCount);
 
-    static std::basic_string<uint8_t> responseBuffer;
-    responseBuffer.clear();
-    responseBuffer.resize_and_overwrite(rxCount, [&readOp](uint8_t* const p, const std::size_t n) -> std::size_t {
-        readOp = gDevice->read(p, n);
-        return n;
-    });
     readOp.submit();
     writeOp.submit();
 
@@ -593,10 +603,10 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
     {
         TraceLoggingThreadActivity<gTL> tlb;
         TraceLoggingWriteStart(tlb, "LK_Chromatic_async_flush()/wait");
-        const auto bytesRead = readOp.wait();
-        const auto bytesWritten = writeOp.wait();
+        const auto rx = readOp.wait();
+        const auto tx = writeOp.wait();
         TraceLoggingWriteStop(tlb, "LK_Chromatic_async_flush()/wait");
-        return std::tuple { bytesRead, bytesWritten };
+        return std::tuple {rx, tx};
     }();
 
     bool error = false;
@@ -626,41 +636,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* data, uint16_t len) {
         return;
     }
 
-    QueryPerformanceCounter(&pcEnd);
-
-    TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/parse");
-
-    uint16_t count = 0;
-    for (auto it = responseBuffer.begin(); it != responseBuffer.end(); it += 2) {
-        if (it[0] == static_cast<uint8_t>(Command::GetData)) {
-            ++count;
-            if (count > len) {
-                LogError("Too many data bytes - expected {}", count);
-                return;
-            }
-            if (data) {
-                *data = it[1];
-                ++data;
-            }
-        }
-    }
-    QueryPerformanceCounter(&pcCpy);
-    if (count != len) {
-        LogError("Incorrect data length - expected {}, got {}", len, count);
-    }
     TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()");
-
-#ifdef LK_WIN32_PERF_LOGGING
-    dprint(
-        "Batch perf: {},{},{},{},{},{},{}",
-        txCount,
-        rxCount,
-        len,
-        pcFreq.QuadPart,
-        pcBegin.QuadPart,
-        pcEnd.QuadPart,
-        pcCpy.QuadPart);
-#endif
 }
 
 extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
@@ -677,16 +653,54 @@ extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
 
 extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
     SendToDevice(Command::GetData);
-    return RecvFromDevice<Command::GetData>();
+    return RecvFromDevice();
 }
 
 extern "C" void LK_Chromatic_DELAY_100NS(const uint8_t count) {
+    static constexpr uint8_t MaxCount = 5;
+
+    if (count == 0) [[unlikely]] {
+        return;
+    }
+
+    if (count > MaxCount) [[unlikely]] {
+        LogError("LK_Chromatic_DELAY_100NS() count {} is greater than max of {}", count, MaxCount);
+        abort();
+    }
+
     if (gAsyncEnabled) {
-        for (uint8_t i = 0; i < count; ++i) {
-            SendToDevice(Command::Ping, i);
-            std::ignore = RecvFromDevice<Command::Ping>();
-        }
+        static constexpr uint8_t MaxNOPCount = (2 * (MaxCount - 1)) + 1;
+        static constexpr uint8_t MaxNOPBytes = 3 * MaxNOPCount;
+
+        // 16.6667ns per tick; every instruction is 3 bytes to read and execute.
+        //
+        // If we have `foo(); NOP(); bar();` time between `foo()` and `bar()`
+        // is 6 ticks, so exactly 100ns.
+        //
+        // However, for `foo(); NOP(); NOP(); bar();` we we get 9 ticks between
+        // foo() and bar() which is only 150ns
+        //
+        // So, for the first 100ns, we need one NOP(), but after that, we need
+        // two NOPs per 100ns
+        const auto nopCount = (2 * (count - 1)) + 1;
+
+        static constexpr auto NOPBuffer = [] constexpr {
+            // 3 bytes per command, and each NOP is 50ns
+            std::array<uint8_t, MaxNOPBytes> ret {};
+            for (auto it = ret.begin(); it != ret.end(); it += 3) {
+                it[0] = std::to_underlying(Command::NOP);
+                it[1] = 0; // arg8a
+                it[2] = 0; // arg8b
+            }
+
+            return ret;
+        }();
+
+        gAsyncBuffer.pushBytes(nopCount * 3, [] (auto* p, const auto byteCount){
+            std::memcpy(p, NOPBuffer.data(), byteCount);
+        });
     } else {
+        // The OS is going to over-wait, but non-async mode is so slow anyway it doesn't matter
         std::this_thread::sleep_for(std::chrono::nanoseconds(static_cast<uint16_t>(count * 100)));
     }
 }
@@ -702,12 +716,10 @@ extern "C" void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high) {
     const uint8_t pins = (1 << pin);
     const uint8_t values = (high << pin);
     SendToDevice(Command::SetPins, pins, values);
-    WaitForDevice<Command::SetPins>();
 }
 
 extern "C" void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe) {
     SendToDevice(Command::SetOutputEnable, (1 << tristate_pin), (oe << tristate_pin));
-    WaitForDevice<Command::SetOutputEnable>();
 }
 
 extern "C" void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
@@ -720,12 +732,10 @@ extern "C" void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
 
 extern "C" void LK_Chromatic_DMG_ADDR_SET(const uint16_t address) {
     SendToDevice16(Command::SetAddress, address);
-    WaitForDevice<Command::SetAddress>();
 }
 
 extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
     SendToDevice(Command::SetData, data);
-    WaitForDevice<Command::SetData>();
 }
 
 extern "C" void LK_Chromatic_CONN_SEND(uint8_t* data, uint16_t count) {
