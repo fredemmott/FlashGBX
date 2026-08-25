@@ -585,6 +585,14 @@ extern "C" void LK_Chromatic_async_start() {
     TraceLoggingWrite(gTL, "LK_Chromatic_async_start()");
 }
 
+extern "C" void LK_Chromatic_async_end() {
+    gAsyncEnabled = false;
+    if (gAsyncBuffer.size() != 0) {
+        LK_Chromatic_async_flush(nullptr, 0);
+    }
+    TraceLoggingWrite(gTL, "LK_Chromatic_async_end()");
+}
+
 extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {
     // Limited by device-side TX buffer
     if (len > 4096) [[unlikely]] {
@@ -595,7 +603,6 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
     LARGE_INTEGER qpBegin, qpEnd;
     QueryPerformanceCounter(&qpBegin);
 
-    gAsyncEnabled = false;
     const auto txCount = gAsyncBuffer.size();
     const auto rxCount = len;
 
@@ -672,6 +679,8 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
 
     QueryPerformanceCounter(&qpEnd);
     const auto elapsed = SecondsBetween(qpBegin, qpEnd);
+
+    gAsyncBuffer.clear();
 
     TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()",
         TraceLoggingValue(static_cast<double>(len) / elapsed, "data-EBps"),

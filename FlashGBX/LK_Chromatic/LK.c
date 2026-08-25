@@ -1127,17 +1127,17 @@ void lk_dmg_cart_write_byte(u32 address, u16 value) {
 		RAW_DMG_DATA_SET(0);
 		RAW_DMG_DATA_DIR_IN();
 	}
-    LK_Chromatic_async_flush(NULL, 0);
+    LK_Chromatic_async_end();
 }
 void lk_dmg_cart_read_data(void) {
+	LK_Chromatic_async_start();
+
 	PIN_RD_L();
 	PIN_CLK_L(); // Pocket Camera needs this
 	RAW_DMG_ADDR_DIR_OUT();
 	RAW_DMG_DATA_DIR_IN();
 	u16 left = _lk_var16[LK_VAR16_TRANSFER_SIZE];
 	while (left > 0) {
-		LK_Chromatic_async_start();
-
 		u16 chunk_len = left > CHUNK_MAX_LEN ? CHUNK_MAX_LEN : left;
 
 		if (_lk_var8[LK_VAR8_DMG_READ_CS_PULSE] == true) { // SRAM
@@ -1175,6 +1175,7 @@ void lk_dmg_cart_read_data(void) {
 		left -= chunk_len;
 	}
 	PIN_RD_H();
+	LK_Chromatic_async_end();
 }
 void lk_dmg_mbc7_read_eeprom(void) {
 	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
