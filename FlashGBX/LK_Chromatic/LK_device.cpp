@@ -618,16 +618,14 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
         // just queue up all the transfers we'll end up doing and get a packed
         // queue instead of needing to resubmit later.
         static constexpr auto MaxTXChunk = 64*1024;
-        static std::list<LibUSBTransfer> txOps;
+        std::list<LibUSBTransfer> txOps;
         for (std::size_t i = 0; i < txCount; i += MaxTXChunk) {
             const auto count = std::min(i + (64*1024), txCount) - i;
-            txOps.emplace_back(gDevice->makeWriteTransfer());
-            auto& op = txOps.back();
-            op.fill(gAsyncBuffer.data() + i, count);
-            op.submit();
+            txOps.emplace_back(gDevice->write(gAsyncBuffer.data() + i, count));
+            txOps.back().submit();
         }
 
-        std::ignore = txOps.back().wait(); // checked below
+        std::ignore = txOps.back().wait(); // values checked below
 
         const auto txResults = std::views::transform(txOps, &LibUSBTransfer::wait) | std::ranges::to<std::vector>();
         const auto firstFailure = std::ranges::find_if_not(txResults, &LibUSBTransfer::Result::has_value);
