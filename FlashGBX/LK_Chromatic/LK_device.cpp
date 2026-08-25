@@ -665,7 +665,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
         TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-error", TraceLoggingValue(std::to_underlying(bytesWritten.error()), "libusb-status"));
     } else if (bytesWritten.value() != txCount) [[unlikely]] {
         error = true;
-        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-count", TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesWritten.value(), "actual"));
+        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-count", TraceLoggingValue(txCount, "expected"), TraceLoggingValue(bytesWritten.value(), "actual"));
     }
 
     if (error) [[unlikely]] {
