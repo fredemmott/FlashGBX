@@ -5,9 +5,11 @@ extern "C" {
 
 #include "PAPI.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <expected>
+#include <ranges>
 #include <format>
 #include <functional>
 #include <future>
@@ -240,7 +242,9 @@ struct [[nodiscard]] LibUSBTransfer {
         while (!_libUSBCompletionFlag) {
             libusb_handle_events_completed(_context, &_libUSBCompletionFlag);
         }
-        this->transition<State::Submitted, State::Complete>();
+        if (_state != State::Complete) {
+            this->transition<State::Submitted, State::Complete>();
+        }
         if (_transfer->status == LIBUSB_TRANSFER_COMPLETED) [[likely]] {
             return static_cast<std::size_t> (_transfer->actual_length);
         }
@@ -605,21 +609,46 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
         TraceLoggingValue(len, "len")
     );
 
-    auto writeOp = gDevice->write(gAsyncBuffer.data(), txCount);
-    auto readOp = gDevice->read(data, rxCount);
-
-    readOp.submit();
-    writeOp.submit();
-
-    const auto [bytesRead, bytesWritten] = [&]
+    LibUSBTransfer::Result bytesWritten, bytesRead;
     {
         TraceLoggingThreadActivity<gTL> tlb;
-        TraceLoggingWriteStart(tlb, "LK_Chromatic_async_flush()/wait");
-        const auto rx = readOp.wait();
-        const auto tx = writeOp.wait();
-        TraceLoggingWriteStop(tlb, "LK_Chromatic_async_flush()/wait");
-        return std::tuple {rx, tx};
-    }();
+        TraceLoggingWriteStart(tlb, "LK_Chromatic_async_flush()/usb");
+
+        // We reliably get a partial success above 64KB on Windows, so let's
+        // just queue up all the transfers we'll end up doing and get a packed
+        // queue instead of needing to resubmit later.
+        static constexpr auto MaxTXChunk = 64*1024;
+        static std::list<LibUSBTransfer> txOps;
+        for (std::size_t i = 0; i < txCount; i += MaxTXChunk) {
+            const auto count = std::min(i + (64*1024), txCount) - i;
+            txOps.emplace_back(gDevice->makeWriteTransfer());
+            auto& op = txOps.back();
+            op.fill(gAsyncBuffer.data() + i, count);
+            op.submit();
+        }
+
+        std::ignore = txOps.back().wait(); // checked below
+
+        const auto txResults = std::views::transform(txOps, &LibUSBTransfer::wait) | std::ranges::to<std::vector>();
+        const auto firstFailure = std::ranges::find_if_not(txResults, &LibUSBTransfer::Result::has_value);
+        if (firstFailure != txResults.end()) [[unlikely]] {
+            bytesWritten = *firstFailure;
+        } else {
+            bytesWritten = std::ranges::fold_left(
+                std::views::transform(txResults, [](const auto& it) { return it.value(); }),
+                0,
+                std::plus<std::size_t>{});
+        }
+
+        if (rxCount == 0) {
+            bytesRead = 0;
+        } else {
+            auto rxOp = gDevice->read(data, rxCount);
+            bytesRead = rxOp.submit().wait();
+        }
+
+        TraceLoggingWriteStop(tlb, "LK_Chromatic_async_flush()/usb");
+    };
 
     bool error = false;
 
