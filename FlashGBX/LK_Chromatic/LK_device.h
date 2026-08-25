@@ -62,13 +62,18 @@ void LK_Chromatic_DELAY_MICROS(uint16_t);
 #define _timeout_check()					((time_start > 0) && (TIMESTAMP_NOW() - time_start > 500))
 
 /* Values match lk_types.sv in the Chromatic verilog */
-#define PIN_WR								1
-#define PIN_RD								2
-#define PIN_CS								3
-#define PIN_CS2								5 /* DMG: RST - AGB: CS2 */
-#define PIN_AUDIO							6
-#define PIN_CLK								0
-#define PIN_A15                             7 /* just for Chromatic */
+#define LK_CHROMATIC_SET_PINS_A_MASK       (1 << 7)
+#define LK_CHROMATIC_SET_PINS_B_MASK       (1 << 6)
+#define LK_CHROMATIC_SET_PINS_COMMAND_MASK (LK_CHROMATIC_SET_PINS_A_MASK | LK_CHROMATIC_SET_PINS_B_MASK)
+
+#define PIN_CLK								(0 | LK_CHROMATIC_SET_PINS_A_MASK)
+#define PIN_WR								(1 | LK_CHROMATIC_SET_PINS_A_MASK)
+#define PIN_RD								(2 | LK_CHROMATIC_SET_PINS_A_MASK)
+#define PIN_CS								(3 | LK_CHROMATIC_SET_PINS_A_MASK)
+
+#define LK_CHROMATIC_PIN_A15                                            (0 | LK_CHROMATIC_SET_PINS_B_MASK)
+#define PIN_CS2								(1 | LK_CHROMATIC_SET_PINS_B_MASK) // "CS2" on AGB, "RST" on DMG
+#define PIN_AUDIO							(2 | LK_CHROMATIC_SET_PINS_B_MASK)
 #define VOLTAGE_SELECT						/**/
 void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high);
 #define PIN_WR_H()							LK_Chromatic_SET_PIN(PIN_WR, 1)
@@ -79,8 +84,8 @@ void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high);
 #define PIN_CS_L()							LK_Chromatic_SET_PIN(PIN_CS, 0)
 #define PIN_CS2_H()							LK_Chromatic_SET_PIN(PIN_CS2, 1)
 #define PIN_CS2_L()							LK_Chromatic_SET_PIN(PIN_CS2, 0)
-#define PIN_AUDIO_H()						LK_Chromatic_SET_PIN(PIN_AUDIO, 1)
-#define PIN_AUDIO_L()						LK_Chromatic_SET_PIN(PIN_AUDIO, 0)
+#define PIN_AUDIO_H()							LK_Chromatic_SET_PIN(PIN_AUDIO, 1)
+#define PIN_AUDIO_L()							LK_Chromatic_SET_PIN(PIN_AUDIO, 0)
 #define PIN_CLK_H()							LK_Chromatic_SET_PIN(PIN_CLK, 1)
 #define PIN_CLK_L()							LK_Chromatic_SET_PIN(PIN_CLK, 0)
 void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high);

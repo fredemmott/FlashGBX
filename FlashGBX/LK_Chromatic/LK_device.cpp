@@ -25,6 +25,8 @@ extern "C" {
 
 namespace {
 
+constexpr auto BytesPerCommand = 2;
+
 TRACELOGGING_DEFINE_PROVIDER(
     gTL,
     "LK_Chromatic",
@@ -85,7 +87,7 @@ struct ContiguousSPSCStream {
     }
 
     [[nodiscard]]
-    bool read(uint8_t* const dest, const std::size_t count, std::stop_token cancel) {
+    bool read(uint8_t* const dest, const std::size_t count, const std::stop_token& cancel) {
         TraceLoggingThreadActivity<gTL> tla;
         TraceLoggingWriteStart(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
 
@@ -151,11 +153,13 @@ enum class Command : uint8_t {
     NOP = 0,
     Ping = 1,
 
-    SetPins = 2,
-    SetOutputEnable = 3,
-    SetAddress = 4,
+    SetAddressMSB = 2,
+    SetAddressLSB = 3,
+    SetOutputEnable = 4,
     SetData = 5,
-    GetData = 6
+    GetData = 6,
+    SetPinsA = 7,
+    SetPinsB = 8,
 };
 
 LK_Chromatic_data_callback PAPI_OnError = nullptr;
@@ -434,20 +438,20 @@ struct CommandBuffer {
         std::free(_begin);
     }
 
-    void push8(const Command cmd, const uint8_t arg8a, const uint8_t arg8b = 0) {
-        ensureCanAppend(3);
+    void push(const Command cmd, const uint8_t arg8) {
+        ensureCanAppend(BytesPerCommand);
 
+        static_assert(BytesPerCommand == 2);
         _end[0] = static_cast<std::underlying_type_t<Command>>(cmd);
-        _end[1] = arg8a;
-        _end[2] = arg8b;
+        _end[1] = arg8;
 
-        _end += 3;
+        _end += BytesPerCommand;
     }
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
     void pushBytes(const std::size_t count, Fn&& fn) {
-        if (count % 3) [[unlikely]] {
-            LogError("Attempted to push {} bytes, which is not a multiple of 3", count);
+        if (count % BytesPerCommand) [[unlikely]] {
+            LogError("Attempted to push {} bytes, which is not a multiple of {}", count, BytesPerCommand);
             abort();
         }
         ensureCanAppend(count);
@@ -491,22 +495,22 @@ bool gAsyncEnabled = false;
 CommandBuffer gAsyncBuffer;
 
 
-void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8b = 0) {
+void SendToDevice(const Command cmd, const uint8_t arg = 0x00) {
     if (gAsyncEnabled) {
-        gAsyncBuffer.push8(cmd, arg8a, arg8b);
+        gAsyncBuffer.push(cmd, arg);
         return;
     }
 
 #pragma pack(push, 1)
     static struct {
         Command cmd {};
-        uint8_t arg8a {};
-        uint8_t arg8b {};
+        uint8_t arg {};
     } request {};
 #pragma pack(pop)
+    static_assert(sizeof(request) == BytesPerCommand);
+
     request.cmd = cmd;
-    request.arg8a = arg8a;
-    request.arg8b = arg8b;
+    request.arg = arg;
 
     const auto bytesWritten = gDevice->write(&request, sizeof(request)).submit().wait();
     if (!bytesWritten.has_value()) {
@@ -516,13 +520,9 @@ void SendToDevice(const Command cmd, const uint8_t arg8a = 0, const uint8_t arg8
             static_cast<int>(bytesWritten.error()));
         return;
     }
-    if (bytesWritten.value() != 3) {
-        LogError("SendToDevice failed: expected 3 bytes written, got {}", bytesWritten.value());
+    if (bytesWritten.value() != BytesPerCommand) {
+        LogError("SendToDevice failed: expected {} bytes written, got {}", BytesPerCommand, bytesWritten.value());
     }
-}
-
-void SendToDevice16(const Command cmd, const uint16_t arg16) {
-    SendToDevice(cmd, static_cast<uint8_t>(arg16 >> 8), static_cast<uint8_t>(arg16 & 0xFF));
 }
 
 [[nodiscard]]
@@ -612,7 +612,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
         "LK_Chromatic_async_flush()",
         TraceLoggingValue(txCount, "txCount"),
         TraceLoggingValue(rxCount, "rxCount"),
-        TraceLoggingValue(txCount / 3, "commandCount"),
+        TraceLoggingValue(txCount / 2, "commandCount"),
         TraceLoggingValue(len, "len")
     );
 
@@ -719,34 +719,56 @@ extern "C" void LK_Chromatic_DELAY_100NS(const uint8_t count) {
     }
 
     if (gAsyncEnabled) {
-        static constexpr uint8_t MaxNOPCount = (2 * (MaxCount - 1)) + 1;
-        static constexpr uint8_t MaxNOPBytes = 3 * MaxNOPCount;
+        static constexpr auto ToNOPCount = [](const uint8_t count) constexpr {
+            // The microcode is executed using the USB clock as the execution
+            // clock - so byte count == tick count.
+            //
+            // Our clock interval is 16.6667ns, so 100ns is 6 ticks. Our
+            // commands are currently 2 bytes, so 33.333ns per command.
+            //
+            // If we have `foo(); NOP(); bar();` though, we have a 4 tick delay
+            // between `foo()` and `bar()`:
+            //
+            //     foo(); NOP(); bar();
+            //     |------| 2 bytes = 2 ticks
+            //            |------| 2 bytes = 2 ticks
+            //     |-------------| 4 bytes = 4 ticks
+            //
+            // ... and each additional NOP gets us another 2 ticks:
+            //
+            //     foo(); NOP(); NOP(); bar();
+            //     |------|      |------|
+            //            |------|
+            //     |--------------------| 6 bytes = 6 ticks
+            //
+            // So, for the first 100ns, we need two NOPs(), but after that, we need
+            // three NOPs per 100ns.
+            //
+            // For 2 bytes per command, that gets us:
+            //
+            //     (3 * count - 1)) + 2
+            //
+            // Let's generalize that:
+            static constexpr auto TicksPerCommand = BytesPerCommand;
+            // 2x for the interval between `foo()` and `bar()` in `foo(); NOP(); bar();`
+            static constexpr auto FirstNOPTicks = 2 * TicksPerCommand;
+            // 6x because 16.667ns tick rate = 100ns/6
+            const auto requiredTicks = 6 * count;
+            return 1 + ((requiredTicks - FirstNOPTicks) / TicksPerCommand);
+        };
 
-        // 16.6667ns per tick; every instruction is 3 bytes to read and execute.
-        //
-        // If we have `foo(); NOP(); bar();` time between `foo()` and `bar()`
-        // is 6 ticks, so exactly 100ns.
-        //
-        // However, for `foo(); NOP(); NOP(); bar();` we we get 9 ticks between
-        // foo() and bar() which is only 150ns
-        //
-        // So, for the first 100ns, we need one NOP(), but after that, we need
-        // two NOPs per 100ns
-        const auto nopCount = (2 * (count - 1)) + 1;
+        static constexpr uint8_t MaxNOPCount = ToNOPCount(MaxCount);
+        static constexpr uint8_t MaxNOPBytes = BytesPerCommand * MaxNOPCount;
 
         static constexpr auto NOPBuffer = [] constexpr {
-            // 3 bytes per command, and each NOP is 50ns
             std::array<uint8_t, MaxNOPBytes> ret {};
-            for (auto it = ret.begin(); it != ret.end(); it += 3) {
-                it[0] = std::to_underlying(Command::NOP);
-                it[1] = 0; // arg8a
-                it[2] = 0; // arg8b
-            }
-
+            // Arguments are unused, so we can just use NOP as the arg
+            ret.fill(std::to_underlying(Command::NOP));
             return ret;
         }();
 
-        gAsyncBuffer.pushBytes(nopCount * 3, [] (auto* p, const auto byteCount){
+        const auto nopCount = ToNOPCount(count);
+        gAsyncBuffer.pushBytes(nopCount * BytesPerCommand, [] (auto* p, const auto byteCount){
             std::memcpy(p, NOPBuffer.data(), byteCount);
         });
     } else {
@@ -762,14 +784,20 @@ extern "C" void LK_Chromatic_DELAY_MICROS(const uint16_t duration) {
     std::this_thread::sleep_for(std::chrono::microseconds(duration));
 }
 
-extern "C" void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high) {
-    const uint8_t pins = (1 << pin);
-    const uint8_t values = (high << pin);
-    SendToDevice(Command::SetPins, pins, values);
+extern "C" void LK_Chromatic_SET_PIN(const uint8_t pin, const uint8_t high) {
+    const auto command = ((pin & LK_CHROMATIC_SET_PINS_COMMAND_MASK) == LK_CHROMATIC_SET_PINS_A_MASK)
+        ? Command::SetPinsA
+        : Command::SetPinsB;
+
+    const auto bitIdx = static_cast<uint8_t>(pin & 0b1111);
+
+    SendToDevice(command, (1 << (bitIdx + 4)) | (high << bitIdx));
 }
 
-extern "C" void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe) {
-    SendToDevice(Command::SetOutputEnable, (1 << tristate_pin), (oe << tristate_pin));
+extern "C" void LK_Chromatic_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe) {
+    SendToDevice(
+        Command::SetOutputEnable,
+        (1 << (tristate_pin + 4)) | (oe << tristate_pin));
 }
 
 extern "C" void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
@@ -777,11 +805,12 @@ extern "C" void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
         LogError("SET_ADDR_PIN called with pin != 15 ({})", pin);
         return;
     }
-    LK_Chromatic_SET_PIN(PIN_A15, high);
+    LK_Chromatic_SET_PIN(LK_CHROMATIC_PIN_A15, high);
 }
 
 extern "C" void LK_Chromatic_DMG_ADDR_SET(const uint16_t address) {
-    SendToDevice16(Command::SetAddress, address);
+    SendToDevice(Command::SetAddressMSB, address >> 8);
+    SendToDevice(Command::SetAddressLSB, address & 0xff);
 }
 
 extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
