@@ -32,6 +32,8 @@ TRACELOGGING_DEFINE_PROVIDER(
     "LK_Chromatic",
     (0x72b32b32, 0x28c9, 0x4298, 0xa4, 0x84, 0xc3, 0x85, 0xdd, 0xda, 0xa2, 0x1f));
 
+#define SPAMMY(...) {}
+
 template<class... Args>
 void dprint(std::format_string<Args...> fmt, Args&&... args) {
     const auto s = std::vformat(fmt.get(), std::make_format_args(args...));
@@ -70,15 +72,14 @@ struct ContiguousSPSCStream {
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
     void write(const std::size_t count, Fn&& f) {
-        TraceLoggingThreadActivity<gTL> tla;
-        TraceLoggingWriteStart(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
+        SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+        SPAMMY(TraceLoggingWriteStart(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
         const auto offset = _writePos.load(std::memory_order_relaxed);
         std::invoke(std::forward<Fn>(f),_buffer.data() + offset, count);
         _writePos.store(offset + count, std::memory_order_release);
         _writePos.notify_one();
-        TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
-
+        SPAMMY(TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
     }
 
     void read(uint8_t* const dest, const std::size_t count) {
@@ -88,8 +89,8 @@ struct ContiguousSPSCStream {
 
     [[nodiscard]]
     bool read(uint8_t* const dest, const std::size_t count, const std::stop_token& cancel) {
-        TraceLoggingThreadActivity<gTL> tla;
-        TraceLoggingWriteStart(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
+        SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+        SPAMMY(TraceLoggingWriteStart(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
         const auto offset = _readPos.load(std::memory_order_relaxed);
 
@@ -100,17 +101,17 @@ struct ContiguousSPSCStream {
         {
             std::size_t writeOff {};
 
-            TraceLoggingThreadActivity<gTL> tlb;
-            TraceLoggingWriteStart(tlb, "Stream::read()/wait");
+            SPAMMY(TraceLoggingThreadActivity<gTL> tlb);
+            SPAMMY(TraceLoggingWriteStart(tlb, "Stream::read()/wait"));
             while (true) {
                 if (cancel.stop_requested()) {
-                    TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("stopped", "result"));
+                    SPAMMY(TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("stopped", "result")));
                     break;
                 }
 
                 writeOff = _writePos.load(std::memory_order_acquire);
                 if (writeOff - offset >= count) {
-                    TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("OK", "result"));
+                    SPAMMY(TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("OK", "result")));
                     break;
                 }
 
@@ -128,7 +129,7 @@ struct ContiguousSPSCStream {
             _writePos.store(0, std::memory_order_release);
         }
 
-        TraceLoggingWriteStop(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label"));
+        SPAMMY(TraceLoggingWriteStop(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
         return true;
     }
@@ -210,8 +211,8 @@ struct [[nodiscard]] LibUSBTransfer {
         uint8_t* buffer,
         const std::size_t length,
         unsigned int timeout = DefaultTimeout) {
-        TraceLoggingThreadActivity<gTL> tla;
-        TraceLoggingWriteStart(tla, "LibUSBTransfer::fill()", TraceLoggingValue(length, "length"));
+        SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+        SPAMMY(TraceLoggingWriteStart(tla, "LibUSBTransfer::fill()", TraceLoggingValue(length, "length")));
 
         if (const auto oldState = std::exchange(_state, State::Filled);
             oldState != State::Init && oldState != State::Complete) [[unlikely]] {
@@ -230,7 +231,7 @@ struct [[nodiscard]] LibUSBTransfer {
             &LibUSBTransfer::callback,
             &this->_libUSBCompletionFlag,
             timeout);
-        TraceLoggingWriteStop(tla, "LibUSBTransfer::fill()");
+        SPAMMY(TraceLoggingWriteStop(tla, "LibUSBTransfer::fill()"));
         return *this;
     }
 
@@ -582,7 +583,7 @@ extern "C" void LK_Chromatic_dprint(const char* const data, va_list args) {
 extern "C" void LK_Chromatic_async_start() {
     gAsyncEnabled = true;
     gAsyncBuffer.clear();
-    TraceLoggingWrite(gTL, "LK_Chromatic_async_start()");
+    SPAMMY(TraceLoggingWrite(gTL, "LK_Chromatic_async_start()"));
 }
 
 extern "C" void LK_Chromatic_async_end() {
@@ -590,7 +591,7 @@ extern "C" void LK_Chromatic_async_end() {
     if (gAsyncBuffer.size() != 0) {
         LK_Chromatic_async_flush(nullptr, 0);
     }
-    TraceLoggingWrite(gTL, "LK_Chromatic_async_end()");
+    SPAMMY(TraceLoggingWrite(gTL, "LK_Chromatic_async_end()"));
 }
 
 extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {
@@ -606,21 +607,18 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
     const auto txCount = gAsyncBuffer.size();
     const auto rxCount = len;
 
-    TraceLoggingThreadActivity<gTL> tla;
-    TraceLoggingWriteStart(
+    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+    SPAMMY(TraceLoggingWriteStart(
         tla,
         "LK_Chromatic_async_flush()",
         TraceLoggingValue(txCount, "txCount"),
         TraceLoggingValue(rxCount, "rxCount"),
         TraceLoggingValue(txCount / 2, "commandCount"),
         TraceLoggingValue(len, "len")
-    );
+    ));
 
     LibUSBTransfer::Result bytesWritten, bytesRead;
     {
-        TraceLoggingThreadActivity<gTL> tlb;
-        TraceLoggingWriteStart(tlb, "LK_Chromatic_async_flush()/usb");
-
         // We reliably get a partial success above 64KB on Windows, so let's
         // just queue up all the transfers we'll end up doing and get a packed
         // queue instead of needing to resubmit later.
@@ -651,26 +649,24 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
             auto rxOp = gDevice->read(data, rxCount);
             bytesRead = rxOp.submit().wait();
         }
-
-        TraceLoggingWriteStop(tlb, "LK_Chromatic_async_flush()/usb");
     };
 
     bool error = false;
 
     if (!bytesRead.has_value()) [[unlikely]] {
         error = true;
-        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/rx-error", TraceLoggingValue(std::to_underlying(bytesRead.error()), "libusb-status"));
+        LogError("LK_Chromatic_async_flush()/rx-error: libusb status: {}", std::to_underlying(bytesRead.error()));
     } else if (bytesRead.value() != rxCount) {
         error = true;
-        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/rx-count", TraceLoggingValue(rxCount, "expected"), TraceLoggingValue(bytesRead.value(), "actual"));
+        LogError("LK_Chromatic_async_flush()/rx-count: expected {} actual {}", rxCount, bytesRead.value());
     }
 
     if (!bytesWritten.has_value()) [[unlikely]] {
         error = true;
-        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-error", TraceLoggingValue(std::to_underlying(bytesWritten.error()), "libusb-status"));
+        LogError("LK_Chromatic_async_flush()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
     } else if (bytesWritten.value() != txCount) [[unlikely]] {
         error = true;
-        TraceLoggingWriteTagged(tla, "LK_Chromatic_async_flush()/tx-count", TraceLoggingValue(txCount, "expected"), TraceLoggingValue(bytesWritten.value(), "actual"));
+        LogError("LK_Chromatic_async_flush()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
     }
 
     if (error) [[unlikely]] {
@@ -682,11 +678,11 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
 
     gAsyncBuffer.clear();
 
-    TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()",
+    SPAMMY(TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()",
         TraceLoggingValue(static_cast<double>(len) / elapsed, "data-EBps"),
         TraceLoggingValue(static_cast<double>(txCount) / elapsed, "usb-tx-EBps"),
         TraceLoggingValue(static_cast<double>(rxCount) / elapsed, "usb-rx-EBps"),
-        TraceLoggingValue(static_cast<double>(rxCount + txCount) / elapsed, "usb-trx-EBps"));
+        TraceLoggingValue(static_cast<double>(rxCount + txCount) / elapsed, "usb-trx-EBps")));
 }
 
 extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
@@ -834,13 +830,13 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_read(uint8_t* data, const uint
         return;
     }
 
-    TraceLoggingThreadActivity<gTL> tla;
-    TraceLoggingWriteStart(tla, "papi_flashgbx_read()");
+    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+    SPAMMY(TraceLoggingWriteStart(tla, "papi_flashgbx_read()"));
 
 
     toFlashGBX.read(data, count);
 
-    TraceLoggingWriteStop(tla, "papi_flashgbx_read()");
+    SPAMMY(TraceLoggingWriteStop(tla, "papi_flashgbx_read()"));
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uint16_t count) {
@@ -848,8 +844,8 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
         return;
     }
 
-    TraceLoggingThreadActivity<gTL> tla;
-    TraceLoggingWriteStart(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count"));
+    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+    SPAMMY(TraceLoggingWriteStart(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count")));
 
     static std::atomic_flag haveWorker {};
     if (!haveWorker.test_and_set()) {
@@ -876,7 +872,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
         std::memcpy(dst, src, n);
     });
 
-    TraceLoggingWriteStop(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count"));
+    SPAMMY(TraceLoggingWriteStop(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count")));
 }
 
 
