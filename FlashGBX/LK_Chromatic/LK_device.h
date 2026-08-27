@@ -151,8 +151,8 @@ void LK_Chromatic_DMG_DATA_SET(uint8_t);
 #define RAW_DMG_DATA_DIR_OUT()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_DATA, 1)
 #define RAW_DMG_DATA_DIR_IN()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_DATA, 0)
 
-uint8_t LK_Chromatic_DMG_RAW_DATA_GET();
-#define RAW_DMG_DATA_GET()					LK_Chromatic_DMG_RAW_DATA_GET()
+uint8_t LK_Chromatic_DMG_DATA_GET();
+#define RAW_DMG_DATA_GET()					LK_Chromatic_DMG_DATA_GET()
 
 // GBA
 #define RAW_AGB_ADDR_SET(addr)				{}

@@ -797,7 +797,7 @@ extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
     return duration_cast<milliseconds>(clock::now() - epoch).count();
 }
 
-extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
+extern "C" uint8_t LK_Chromatic_DMG_DATA_GET() {
     SendToDevice(Command::GetData);
     return 0xFF; // async
 }
