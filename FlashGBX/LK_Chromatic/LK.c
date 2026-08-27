@@ -2185,12 +2185,22 @@ u32 lk_dmg_agb_calc_crc32(u32 length) {
 		PIN_RD_L();
 		PIN_CLK_L(); // Pocket Camera needs this
 		RAW_DMG_ADDR_DIR_OUT();
-		for (u32 x = 0; x < length; x++) {
-			RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);
-			_delay_400ns();
-			checksum = crc32_table[(checksum ^ RAW_DMG_DATA_GET()) & 0xFF] ^ (checksum >> 8);
-			PIN_ADDR_H(15);
-			_lk_var32[LK_VAR32_ADDRESS]++;
+		for (u32 chunk_begin = 0; chunk_begin < length; chunk_begin += CHUNK_MAX_LEN) {
+			u32 chunk_end = chunk_begin + CHUNK_MAX_LEN;
+			if (chunk_end > length) chunk_end = length;
+			u32 chunk_length = chunk_end - chunk_begin;
+
+			for (u32 x = 0; x < chunk_length; ++x) {
+				RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);
+				_delay_400ns();
+				data_buffer[x] = RAW_DMG_DATA_GET();
+				PIN_ADDR_H(15);
+				_lk_var32[LK_VAR32_ADDRESS]++;
+			}
+			LK_Chromatic_async_flush(data_buffer, chunk_length);
+			for (u32 x = 0; x < chunk_length; x++) {
+				checksum = crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
+			}
 		}
 		PIN_RD_H();
 	} else { // AGB mode
