@@ -746,7 +746,7 @@ extern "C" void LK_Chromatic_set_variable(const uint8_t size, const uint32_t key
     }
 }
 
-extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {
+extern "C" void LK_Chromatic_flush(uint8_t* const data, const uint16_t len) {
     CommandQueue::get().flush(data, len);
 }
 
