@@ -1175,11 +1175,21 @@ void lk_dmg_cart_read_data(void) {
 }
 void lk_dmg_mbc7_read_eeprom(void) {
 	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
+		uint8_t* it = data_buffer;
 		lk_dmg_mbc7_set_cmd(_lk_var32[LK_VAR32_ADDRESS]++, LK_MODE_RAM_READ);
-		u16 data = 0;
 		for (u8 y = 0; y < 16; y++) {
 			lk_dmg_mbc7_write(0);
-			data = (data << 1) | (lk_dmg_cart_read_byte(0xA080) & 1);
+			*it = lk_dmg_cart_read_byte(0xA080);
+			++it;
+		}
+	}
+
+	LK_Chromatic_async_flush(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
+
+	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
+		u16 data = 0;
+		for (u8 y = 0; y < 16; y++) {
+			data = (data << 1) | (data_buffer[y] & 1);
 		}
 		lk_conn_send_u16(data);
 	}
