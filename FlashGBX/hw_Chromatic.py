@@ -21,7 +21,6 @@ NATIVE_DATA_CALLBACK = ctypes.CFUNCTYPE(
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
-    LK_FW_VERSION = 15
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
@@ -154,6 +153,12 @@ class GbxDevice(LK_Device):
             time.sleep(0.01)
             device_id = self.DEVICE.read(self.DEVICE.in_waiting)
 
+            self._write(bytearray(b'\x55\xAA'))
+            time.sleep(0.01)
+            device_id_dup = self.DEVICE.read(self.DEVICE.in_waiting)
+            if device_id_dup != device_id:
+                raise Exception("Device ID mismatch")
+
             if b"FW L" in device_id:
                 dprint("Running dedicated firmware; no longer supported")
 
@@ -184,7 +189,10 @@ class GbxDevice(LK_Device):
             upstream_minor = device_id[26]
             usb_interface = device_id[27]
 
-            self.FW["fw_dt"] = f"{year}-{month}-{day}"
+            fpga_fw_dt = f"{year}-{month}-{day}"
+
+            self.FW["device_name"] = self.DEVICE_NAME
+            self.FW["pcb_name"] = self.DEVICE_NAME
             self.FW["fw_ver/ChromaticDumper"] = f"{year}.{month}.{day}.{revision}"
             self.FW["fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
 
@@ -193,33 +201,17 @@ class GbxDevice(LK_Device):
                 self.FW = None
                 return False
 
-            self.FW["cfw_id"] = "L"
-            self.FW["fw_ver"] = self.LK_FW_VERSION
-
-            self.FW["pcb_ver"] = None
-            self.FW["ofw_ver"] = None
-            self.FW["pcb_name"] = "GWA5-25A"
-
-
-            # Doesn't appear to be physically supported
-            self.FW["cart_power_ctrl"] = False
-            self.FW["bootloader_reset"] = False
-
-            self._write(bytearray(b'\x55\xAA'))
-            time.sleep(0.01)
-            device_id_dup = self.DEVICE.read(self.DEVICE.in_waiting)
-            if device_id_dup != device_id:
-                raise Exception("Device ID mismatch")
 
             self._write(bytearray(b'LK')) # Switch mode
             time.sleep(0.10)
-            junk = self.DEVICE.read(self.DEVICE.in_waiting)
 
             self.DEVICE.__class__ = MicrocodeDevice
             cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk.papi_recv_from_lk, self._lk.papi_send_to_lk)
 
             self._lk.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, usb_interface)
 
+            self._query_lk_firmware_version()
+            self.FW["fw_dt"] = fpga_fw_dt
             return True
 
         except Exception as e:
@@ -234,14 +226,49 @@ class GbxDevice(LK_Device):
                 pass
             return False
 
+    def _query_lk_firmware_version(self):
+        self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
+        size = self._read(1)
+        if size != 8: return False
+        data = self._read(size)
+        info = data[:8]
+        keys = ["cfw_id", "fw_ver", "pcb_ver", "fw_ts"]
+        values = struct.unpack(">cHBI", bytearray(info))
+        self.FW.update(zip(keys, values))
+        self.FW["cfw_id"] = self.FW["cfw_id"].decode('ascii')
+        self.FW["fw_dt"] = datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(
+            microsecond=0).isoformat()
+        self.FW["ofw_ver"] = None
+        self.FW["cart_power_ctrl"] = False
+        self.FW["bootloader_reset"] = False
+
+        size = self._read(1)
+        name = self._read(size)
+        if len(name) > 0:
+            try:
+                self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
+            except:
+                self.FW["pcb_name"] = self.DEVICE_NAME
+        self.DEVICE_NAME = self.FW["pcb_name"]
+
+        # Cartridge Power Control support
+        temp = self._read(1)
+        self.FW["cart_power_ctrl"] = True if temp & 1 == 1 else False
+        self.FW["cart_presence_switch"] = True if (temp >> 1) & 1 == 1 else False
+        self.FW["cart_mode_switch"] = True if (temp >> 2) & 1 == 1 else False
+
+        # Reset to bootloader support
+        self.FW["bootloader_reset"] = True if self._read(1) == 1 else False
+        return True
+
     def ChangeBaudRate(self, _):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        return f"v{self.FW["fw_ver/ChromaticDumper"]} (based on v{self.FW['fw_ver/Upstream']})"
+        return f"L{self.FW['fw_ver']} MC v{self.FW["fw_ver/ChromaticDumper"]} (ModRetro v{self.FW['fw_ver/Upstream']})"
 
     def GetFullNameExtended(self, more=False):
-        return "{:s} – Firmware {:s} ({:s})".format(self.GetFullName(), self.GetFirmwareVersion(), self.GetPort())
+        return f"{self.GetFullName()} - {self.GetFirmwareVersion()}"
 
     def GetFullName(self):
         # Superclass behavior includes PCB version, which isn't applicable here

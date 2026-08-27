@@ -5,8 +5,8 @@
 	Last Modified: 2025-04-18T22:10:43+02:00
 */
 
-#ifndef _LK_DEVICENAME_H_
-#define _LK_DEVICENAME_H_
+#ifndef _LK_MICROCODE_H_
+#define _LK_MICROCODE_H_
 
 #include "LK.h"
 
@@ -16,9 +16,10 @@
 #include <stdarg.h>
 #endif
 
-#define HARDWARE_DEVICENAME
+#define HARDWARE_MICROCODE
+#define HARDWARE_CHROMATIC
 
-#define LK_DEVICE_NAME 						"<Device Name>"
+#define LK_DEVICE_NAME 						"Chromatic"
 #define LK_PCB_VERSION						1
 #define LK_POWER_CONTROL_SUPPORT			true
 #define LK_BOOTLOADER_RESET_SUPPORT			false
