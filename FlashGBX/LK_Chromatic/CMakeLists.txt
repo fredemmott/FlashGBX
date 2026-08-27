@@ -40,9 +40,10 @@ target_link_libraries(
   usb-1.0 # In future versions, this will be libusb::usb-1.0
 )
 
+install(TARGETS _LK_Chromatic DESTINATION FlashGBX)
+
 if (MSVC)
     # Enable conformant mode for the C preprocessor
     target_compile_options(_LK_Chromatic PRIVATE "/Zc:preprocessor")
+    install(FILES "$<TARGET_PDB_FILE:_LK_Chromatic>" DESTINATION FlashGBX)
 endif()
-
-install(TARGETS _LK_Chromatic DESTINATION FlashGBX)
