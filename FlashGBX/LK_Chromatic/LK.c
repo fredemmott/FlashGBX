@@ -17,6 +17,7 @@ u8 _lk_bankcmd_num = 0;
 u32 _lk_bankcmd_addr[3];
 u8 _lk_bankcmd_mode[3];
 u8 data_buffer[0x1000];
+u8 data_buffer[CHUNK_MAX_LEN];
 u16 flash_write_cycle[3][2];
 u32 time_start = 0;
 bool auto_off_timer_suspended = false;

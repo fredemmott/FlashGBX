@@ -137,7 +137,8 @@ inline void LK_Chromatic_CONN_SEND_BYTE(uint8_t data) {
 // #define CART_PRESENCE_SWITCH_GET()			() // 0 = off, 1 = on
 // #define CART_MODE_SWITCH_GET()				() // 0 = AGB, 1 = DMG
 
-#define CHUNK_MAX_LEN						4096
+// Moved to LK.h so it can affect the size of data_buffer
+//#define CHUNK_MAX_LEN						4096
 
 
 // GB/GBC
