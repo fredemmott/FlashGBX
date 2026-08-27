@@ -180,7 +180,22 @@ enum class Command : uint8_t {
     GetData = 6,
     SetPinsA = 7,
     SetPinsB = 8,
+    VerifyData = 9,
 };
+
+[[nodiscard]]
+bool ProducesRX(const Command cmd) noexcept {
+    using enum Command;
+
+    switch (cmd) {
+    case Ping:
+    case GetData:
+    case VerifyData:
+        return true;
+    default:
+        return false;
+    }
+}
 
 LK_Chromatic_data_callback PAPI_OnError = nullptr;
 
@@ -409,7 +424,6 @@ struct LibUSBDevice {
 
 private:
     static constexpr auto DefaultTimeout = LibUSBTransfer::DefaultTimeout;
-    static constexpr unsigned int BufferSize = 65536;
 
     libusb_context* _context {};
     libusb_device_handle* _device {};
@@ -671,18 +685,15 @@ extern "C" void LK_Chromatic_dprint(const char* const data, va_list args) {
     TraceLoggingWrite(gTL, "dprint-LK", TraceLoggingCountedString(s.data(), s.size(), "message"));
 }
 
-extern "C" void LK_Chromatic_async_start() {
-    gAsyncEnabled = true;
-    gAsyncBuffer.clear();
-    SPAMMY(TraceLoggingWrite(gTL, "LK_Chromatic_async_start()"));
-}
-
-extern "C" void LK_Chromatic_async_end() {
-    gAsyncEnabled = false;
-    if (gAsyncBuffer.size() != 0) {
-        LK_Chromatic_async_flush(nullptr, 0);
-    }
-    SPAMMY(TraceLoggingWrite(gTL, "LK_Chromatic_async_end()"));
+extern "C" void LK_Chromatic_verify_data(const uint8_t expected) {
+    // `lk_dmg_verify_data`, with the loop body moved to a dedicated microcode command
+    PIN_RD_L();
+    PIN_CLK_L(); // Pocket Camera needs this
+    RAW_DMG_DATA_SET(0);
+    RAW_DMG_DATA_DIR_IN();
+    RAW_DMG_ADDR_DIR_OUT();
+    // Address should still be set from the write
+    CommandQueue::get().push(Command::VerifyData, expected);
 }
 
 extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {

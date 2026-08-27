@@ -1821,8 +1821,12 @@ void lk_dmg_agb_flash_unbuffered(void) {
 
 	if ((_lk_var8[LK_VAR8_FLASH_COMMAND_SET] == LK_FLASH_COMMAND_SET_AMD)) {
 		if (_lk_var8[LK_VAR8_CART_MODE] == LK_MODE_DMG) {
+			u16 base_address = _lk_var32[LK_VAR32_ADDRESS] & 0xFFFF;
+			u16 written = 0;
+
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] != 0xFF) {
+					written++;
 					if (_lk_var8[LK_VAR8_FLASH_COMMANDS_BANK_1] == 1) {
 						lk_dmg_change_bank(1);
 					}
@@ -1843,10 +1847,20 @@ void lk_dmg_agb_flash_unbuffered(void) {
 							lk_dmg_change_bank(_lk_var16[LK_VAR16_LAST_BANK_ACCESSED]);
 						}
 					}
-					lk_dmg_verify_data(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);
+					// lk_dmg_verify_data(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);
+					LK_Chromatic_verify_data(data_buffer[x]);
 					if (_timeout_check()) break;
 				}
 				_lk_var32[LK_VAR32_ADDRESS]++;
+			}
+			LK_Chromatic_async_flush(verify_data_buffer, written);
+			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
+				if (data_buffer[x] == 0xFF) continue;
+				if (data_buffer[x] != verify_data_buffer[x]) {
+					dprint("LK_Chromatic_verify_data(addr=%x, comp=%x): Timed out with %x!\r\n", base_address + x, data_buffer[x], verify_data_buffer[x]);
+					_lk_var16[LK_VAR16_STATUS_REGISTER] = verify_data_buffer[x];
+					break;
+				}
 			}
 		} else { // AGB
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
