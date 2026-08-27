@@ -569,10 +569,6 @@ struct CommandQueue {
         return instance;
     }
 
-    [[nodiscard]]
-    CommandBuffer& buffer() {
-        return _buffer;
-    }
 private:
     CommandBuffer _buffer {};
     bool _enabled { false };
