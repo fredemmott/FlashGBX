@@ -12,9 +12,17 @@ add_library(
   MODULE
   LK.c
   LK.h
-  LK_device.cpp
   LK_device.h
+
+  LK2MC.cpp
+
+  MC_impl_common.hpp
+
+  MC_transport.h
+  MC_libusb_device.cpp
+
   PAPI.hpp
+  PAPI.cpp
 )
 
 set_target_properties(

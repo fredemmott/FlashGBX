@@ -26,15 +26,15 @@
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
 #define LK_ASYNC					true
-#if !LK_ASYNC
+#if (!LK_ASYNC)
 #define LK_ASYNC_FLUSH(DATA, LEN) {}
 #endif
 
-uint8_t LK_Chromatic_ping(uint8_t);
-void LK_Chromatic_verify_data(uint8_t expected);
-void LK_Chromatic_set_variable(uint8_t size, uint32_t key, uint32_t value);
-void LK_Chromatic_dprint(const char*, va_list);
-void LK_Chromatic_flush(uint8_t* data, uint16_t len);
+uint8_t LK2MC_ping(uint8_t);
+void LK2MC_verify_data(uint8_t expected);
+void LK2MC_set_variable(uint8_t size, uint32_t key, uint32_t value);
+void LK2MC_dprint(const char*, va_list);
+void LK2MC_flush(uint8_t* data, uint16_t len);
 
 /* This is a smell as it breaks the abstraction, but given different flash
  * methods submit different numbers of status register checks, we need to track
@@ -44,31 +44,31 @@ void LK_Chromatic_flush(uint8_t* data, uint16_t len);
  * functions, but that would be brittle, hard to test, and require changing the
  * signature of all of them, making rebasing/merging future changes more
  * difficult. */
-uint32_t LK_Chromatic_get_pending_verify_status_register_count();
-void LK_Chromatic_verify_status_register();
+uint32_t LK2MC_get_pending_verify_status_register_count();
+void LK2MC_verify_status_register();
 // returns LK_STATUS_OK | LK_STATUS_ERROR
-uint8_t LK_Chromatic_verify_status_register_flush(uint8_t* buffer, uint32_t count);
+uint8_t LK2MC_verify_status_register_flush(uint8_t* buffer, uint32_t count);
 
-#define LK_DEVICE_PING(COOKIE) LK_Chromatic_ping(COOKIE)
-#define LK_DEVICE_ON_SET_VARIABLE(SIZE, KEY, VALUE) LK_Chromatic_set_variable(SIZE, KEY, VALUE)
+#define LK_DEVICE_PING(COOKIE) LK2MC_ping(COOKIE)
+#define LK_DEVICE_ON_SET_VARIABLE(SIZE, KEY, VALUE) LK2MC_set_variable(SIZE, KEY, VALUE)
 
-#define LK_ASYNC_FLUSH(DATA, LEN) LK_Chromatic_flush(DATA, LEN)
-#define LK_ASYNC_VERIFY_DATA(COMP) LK_Chromatic_verify_data(COMP)
-#define LK_ASYNC_VERIFY_STATUS_REGISTER() LK_Chromatic_verify_status_register()
-#define LK_ASYNC_VERIFY_STATUS_REGISTER_FLUSH(DATA, LEN) LK_Chromatic_verify_status_register_flush(DATA, LEN)
-#define LK_ASYNC_PENDING_VERIFY_STATUS_REGISTER_COUNT() LK_Chromatic_get_pending_verify_status_register_count()
+#define LK_ASYNC_FLUSH(DATA, LEN) LK2MC_flush(DATA, LEN)
+#define LK_ASYNC_VERIFY_DATA(COMP) LK2MC_verify_data(COMP)
+#define LK_ASYNC_VERIFY_STATUS_REGISTER() LK2MC_verify_status_register()
+#define LK_ASYNC_VERIFY_STATUS_REGISTER_FLUSH(DATA, LEN) LK2MC_verify_status_register_flush(DATA, LEN)
+#define LK_ASYNC_PENDING_VERIFY_STATUS_REGISTER_COUNT() LK2MC_get_pending_verify_status_register_count()
 
 #ifndef LK_DEVICE_NO_DPRINT
 inline void dprint(const char* const fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
-	LK_Chromatic_dprint(fmt, args);
+	LK2MC_dprint(fmt, args);
 	va_end(args);
 }
 #endif
 
-void LK_Chromatic_DELAY_100NS(uint8_t);
-void LK_Chromatic_DELAY_MICROS(uint32_t);
+void LK2MC_DELAY_100NS(uint8_t);
+void LK2MC_DELAY_MICROS(uint32_t);
 // 60mhz = 16.667ns ticks, and 3 ticks per instruction; while a NOP takes 3 ticks,
 // given:
 //
@@ -77,12 +77,12 @@ void LK_Chromatic_DELAY_MICROS(uint32_t);
 // ... there are at least 6 ticks between FOO executing and BAR executing
 //
 // So, we can ensure 100ns between instructions by queueing a single nop
-#define _delay_100ns()						LK_Chromatic_DELAY_100NS(1)
-#define _delay_200ns()						LK_Chromatic_DELAY_100NS(2)
-#define _delay_300ns()						LK_Chromatic_DELAY_100NS(3)
-#define _delay_400ns()						LK_Chromatic_DELAY_100NS(4)
-#define _delay_500ns()						LK_Chromatic_DELAY_100NS(5)
-#define _delay_us(us)						LK_Chromatic_DELAY_MICROS(us)
+#define _delay_100ns()						LK2MC_DELAY_100NS(1)
+#define _delay_200ns()						LK2MC_DELAY_100NS(2)
+#define _delay_300ns()						LK2MC_DELAY_100NS(3)
+#define _delay_400ns()						LK2MC_DELAY_100NS(4)
+#define _delay_500ns()						LK2MC_DELAY_100NS(5)
+#define _delay_us(us)						LK2MC_DELAY_MICROS(us)
 #define _delay_ms(ms)						_delay_us(ms * 1000)
 #define _delay_dmg_slow_access()			_delay_us(2)
 
@@ -104,22 +104,22 @@ void LK_Chromatic_DELAY_MICROS(uint32_t);
 #define PIN_CS2								(1 | LK_CHROMATIC_SET_PINS_B_MASK) // "CS2" on AGB, "RST" on DMG
 #define PIN_AUDIO							(2 | LK_CHROMATIC_SET_PINS_B_MASK)
 #define VOLTAGE_SELECT						/**/
-void LK_Chromatic_SET_PIN(uint8_t pin, uint8_t high);
-#define PIN_WR_H()							LK_Chromatic_SET_PIN(PIN_WR, 1)
-#define PIN_WR_L()							LK_Chromatic_SET_PIN(PIN_WR, 0)
-#define PIN_RD_H()							LK_Chromatic_SET_PIN(PIN_RD, 1)
-#define PIN_RD_L()							LK_Chromatic_SET_PIN(PIN_RD, 0)
-#define PIN_CS_H()							LK_Chromatic_SET_PIN(PIN_CS, 1)
-#define PIN_CS_L()							LK_Chromatic_SET_PIN(PIN_CS, 0)
-#define PIN_CS2_H()							LK_Chromatic_SET_PIN(PIN_CS2, 1)
-#define PIN_CS2_L()							LK_Chromatic_SET_PIN(PIN_CS2, 0)
-#define PIN_AUDIO_H()							LK_Chromatic_SET_PIN(PIN_AUDIO, 1)
-#define PIN_AUDIO_L()							LK_Chromatic_SET_PIN(PIN_AUDIO, 0)
-#define PIN_CLK_H()							LK_Chromatic_SET_PIN(PIN_CLK, 1)
-#define PIN_CLK_L()							LK_Chromatic_SET_PIN(PIN_CLK, 0)
-void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high);
-#define PIN_ADDR_H(pin)						LK_Chromatic_SET_ADDR_PIN(pin, 1)
-#define PIN_ADDR_L(pin)						LK_Chromatic_SET_ADDR_PIN(pin, 0)
+void LK2MC_SET_PIN(uint8_t pin, uint8_t high);
+#define PIN_WR_H()							LK2MC_SET_PIN(PIN_WR, 1)
+#define PIN_WR_L()							LK2MC_SET_PIN(PIN_WR, 0)
+#define PIN_RD_H()							LK2MC_SET_PIN(PIN_RD, 1)
+#define PIN_RD_L()							LK2MC_SET_PIN(PIN_RD, 0)
+#define PIN_CS_H()							LK2MC_SET_PIN(PIN_CS, 1)
+#define PIN_CS_L()							LK2MC_SET_PIN(PIN_CS, 0)
+#define PIN_CS2_H()							LK2MC_SET_PIN(PIN_CS2, 1)
+#define PIN_CS2_L()							LK2MC_SET_PIN(PIN_CS2, 0)
+#define PIN_AUDIO_H()							LK2MC_SET_PIN(PIN_AUDIO, 1)
+#define PIN_AUDIO_L()							LK2MC_SET_PIN(PIN_AUDIO, 0)
+#define PIN_CLK_H()							LK2MC_SET_PIN(PIN_CLK, 1)
+#define PIN_CLK_L()							LK2MC_SET_PIN(PIN_CLK, 0)
+void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
+#define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
+#define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)
 
 #define CART_POWER_ON()						{}
 #define CART_POWER_OFF()					{}
@@ -130,8 +130,8 @@ void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define AUTO_POWEROFF_RESUME()				{}
 #define AUTO_POWEROFF_SUSPEND()				{}
 
-uint32_t LK_Chromatic_TIMESTAMP_NOW();
-#define TIMESTAMP_NOW()						LK_Chromatic_TIMESTAMP_NOW()
+uint32_t LK2MC_TIMESTAMP_NOW();
+#define TIMESTAMP_NOW()						LK2MC_TIMESTAMP_NOW()
 
 #define RAW_PINS_DIR_OUT()					{}
 #define RAW_PINS_DIR_IN()					{}
@@ -140,24 +140,24 @@ uint32_t LK_Chromatic_TIMESTAMP_NOW();
 #define TRISTATE_AUDIO 0
 #define TRISTATE_DATA 1
 #define TRISTATE_ADDRESS 2
-void LK_Chromatic_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe);
+void LK2MC_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe);
 
 
-#define PIN_AUDIO_DIR_OUT()					LK_Chromatic_OUTPUT_ENABLE(TRISTATE_AUDIO, 1)
-#define PIN_AUDIO_DIR_IN()					LK_Chromatic_OUTPUT_ENABLE(TRISTATE_AUDIO, 0)
+#define PIN_AUDIO_DIR_OUT()					LK2MC_OUTPUT_ENABLE(TRISTATE_AUDIO, 1)
+#define PIN_AUDIO_DIR_IN()					LK2MC_OUTPUT_ENABLE(TRISTATE_AUDIO, 0)
 
 #define PULLUPS_ON()						{}
 
 #define PULLUPS_OFF()						{}
 
-void LK_Chromatic_CONN_SEND(uint8_t* data, uint16_t count);
-void LK_Chromatic_CONN_RECV(uint8_t* data, uint16_t count);
-inline void LK_Chromatic_CONN_SEND_BYTE(uint8_t data) {
-    LK_Chromatic_CONN_SEND(&data, 1);
+void lk_recv_from_host(uint8_t* data, uint16_t count);
+void lk_send_to_host(const uint8_t* data, uint16_t count);
+inline void lk_send_byte_to_host(const uint8_t data) {
+    lk_send_to_host(&data, 1);
 }
-#define CONN_RECV(data, count)				LK_Chromatic_CONN_RECV(data, count)
-#define CONN_SEND_BYTE(data)				LK_Chromatic_CONN_SEND_BYTE(data)
-#define CONN_SEND(data, count)				LK_Chromatic_CONN_SEND(data, count)
+#define CONN_RECV(data, count)				lk_recv_from_host(data, count)
+#define CONN_SEND_BYTE(data)				lk_send_byte_to_host(data)
+#define CONN_SEND(data, count)				lk_send_to_host(data, count)
 #define BOOTLOADER_RESET()					{}
 
 #define DISABLE_INTERRUPTS()				{}
@@ -171,18 +171,18 @@ inline void LK_Chromatic_CONN_SEND_BYTE(uint8_t data) {
 
 
 // GB/GBC
-void LK_Chromatic_DMG_ADDR_SET(uint16_t);
-void LK_Chromatic_DMG_DATA_SET(uint8_t);
-#define RAW_DMG_ADDR_SET(addr)				LK_Chromatic_DMG_ADDR_SET(addr)
-#define RAW_DMG_DATA_SET(data)				LK_Chromatic_DMG_DATA_SET(data)
+void LK2MC_DMG_ADDR_SET(uint16_t);
+void LK2MC_DMG_DATA_SET(uint8_t);
+#define RAW_DMG_ADDR_SET(addr)				LK2MC_DMG_ADDR_SET(addr)
+#define RAW_DMG_DATA_SET(data)				LK2MC_DMG_DATA_SET(data)
 
-#define RAW_DMG_ADDR_DIR_OUT()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_ADDRESS, 1)
-#define RAW_DMG_ADDR_DIR_IN()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_ADDRESS, 0)
-#define RAW_DMG_DATA_DIR_OUT()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_DATA, 1)
-#define RAW_DMG_DATA_DIR_IN()				LK_Chromatic_OUTPUT_ENABLE(TRISTATE_DATA, 0)
+#define RAW_DMG_ADDR_DIR_OUT()				LK2MC_OUTPUT_ENABLE(TRISTATE_ADDRESS, 1)
+#define RAW_DMG_ADDR_DIR_IN()				LK2MC_OUTPUT_ENABLE(TRISTATE_ADDRESS, 0)
+#define RAW_DMG_DATA_DIR_OUT()				LK2MC_OUTPUT_ENABLE(TRISTATE_DATA, 1)
+#define RAW_DMG_DATA_DIR_IN()				LK2MC_OUTPUT_ENABLE(TRISTATE_DATA, 0)
 
-uint8_t LK_Chromatic_DMG_DATA_GET();
-#define RAW_DMG_DATA_GET()					LK_Chromatic_DMG_DATA_GET()
+uint8_t LK2MC_DMG_DATA_GET();
+#define RAW_DMG_DATA_GET()					LK2MC_DMG_DATA_GET()
 
 // GBA
 #define RAW_AGB_ADDR_SET(addr)				{}
