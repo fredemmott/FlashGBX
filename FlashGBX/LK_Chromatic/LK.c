@@ -682,10 +682,10 @@ void lk_loop(u8 command) {
 						}
 					}
 				}
-#ifdef LK_ASYNC
-				u32 flush_count = LK_Chromatic_get_pending_verify_status_register_count();
+#if LK_ASYNC
+				u32 flush_count = LK_ASYNC_PENDING_VERIFY_STATUS_REGISTER_COUNT();
 				if (flush_count) {
-					lk_conn_send_u8(LK_Chromatic_verify_status_register_flush(verify_data_buffer, flush_count));
+					lk_conn_send_u8(LK_ASYNC_VERIFY_STATUS_REGISTER_FLUSH(verify_data_buffer, flush_count));
 					break;
 				}
 #endif
@@ -1172,7 +1172,7 @@ void lk_dmg_cart_read_data(void) {
 				PIN_RD_H();
 			}
 		}
-		LK_DEVICE_FLUSH(data_buffer, chunk_len);
+		LK_ASYNC_FLUSH(data_buffer, chunk_len);
 
 		lk_conn_send(data_buffer, chunk_len);
 		left -= chunk_len;
@@ -1190,7 +1190,7 @@ void lk_dmg_mbc7_read_eeprom(void) {
 		}
 	}
 
-	LK_DEVICE_FLUSH(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
+	LK_ASYNC_FLUSH(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
 
 	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
 		u16 data = 0;
@@ -1216,7 +1216,7 @@ void lk_dmg_mbc7_write_eeprom(void) {
 }
 
 void lk_dmg_verify_data(u32 addr, u16 comp) {
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 	_timeout_init();
 	u8 data;
 	PIN_RD_L();
@@ -1248,8 +1248,8 @@ void lk_dmg_verify_data(u32 addr, u16 comp) {
 	    iteration */
 	u8 data;
 	RAW_DMG_ADDR_SET(addr & 0xFFFF);
-	LK_Chromatic_verify_data(comp);
-	LK_DEVICE_FLUSH(&data, 1);
+	LK_ASYNC_VERIFY_DATA(comp);
+	LK_ASYNC_FLUSH(&data, 1);
 	if (data != comp) {
 		dprint("lk_dmg_verify_data(addr=%x, comp=%x): Timed out with %x!\r\n", addr, comp, data);
 		_lk_var16[LK_VAR16_STATUS_REGISTER] = data;
@@ -1257,7 +1257,7 @@ void lk_dmg_verify_data(u32 addr, u16 comp) {
 #endif
 }
 void lk_dmg_verify_status_register(u32 addr) {
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 	_timeout_init();
 	RAW_DMG_DATA_SET(0);
 	RAW_DMG_DATA_DIR_IN();
@@ -1285,9 +1285,9 @@ void lk_dmg_verify_status_register(u32 addr) {
 	 * but can be called once per N bytes by buffered writes. */
 	u8 data;
 	RAW_DMG_ADDR_SET(addr & 0xFFFF);
-	LK_Chromatic_verify_status_register();
+	LK_ASYNC_VERIFY_STATUS_REGISTER();
 	/* Calls dprint and sets LK_VAR16_STATUS_REGISTER for us */
-	LK_Chromatic_verify_status_register_flush(&data, 1);
+	LK_ASYNC_VERIFY_STATUS_REGISTER_FLUSH(&data, 1);
 #endif
 }
 void lk_dmg_flash_write_byte(u32 address, u16 value) {
@@ -1381,11 +1381,11 @@ void lk_dmg_flash_mbc6(u16 buffer_offset) {
 	lk_dmg_cart_write_byte(_lk_var32[LK_VAR32_ADDRESS]-1, 0x00);
 	
 	// Status register check
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
 #else
 	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
-	LK_Chromatic_verify_status_register();
+	LK_ASYNC_VERIFY_STATUS_REGISTER();
 #endif
 }
 
@@ -1402,11 +1402,11 @@ void lk_dmg_flash_E201264(u16 buffer_offset) {
 	lk_dmg_cart_write_byte(_lk_var32[LK_VAR32_ADDRESS], 0x00);
 	_lk_var32[LK_VAR32_ADDRESS] += 128;
 	lk_dmg_cart_write_byte(0x4000, 0x70);
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
 #else
 	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
-	LK_Chromatic_verify_status_register();
+	LK_ASYNC_VERIFY_STATUS_REGISTER();
 #endif
 	lk_dmg_cart_write_byte(0x4000, 0xFF);
 }
@@ -1423,11 +1423,11 @@ void lk_dmg_flash_bung_16m(u16 buffer_offset) {
 		lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS]++, data_buffer[buffer_offset+x]);
 	}
 	_delay_us(100);
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
 #else
 	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
-	LK_Chromatic_verify_status_register();
+	LK_ASYNC_VERIFY_STATUS_REGISTER();
 #endif
 }
 
@@ -1466,11 +1466,11 @@ void lk_dmg_flash_mmsa(u16 buffer_offset) {
 	}
 	lk_dmg_cart_write_byte(_lk_var32[LK_VAR32_ADDRESS] - 1, 0xFF);
 	_delay_ms(4);
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
 #else
 	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
-	LK_Chromatic_verify_status_register();
+	LK_ASYNC_VERIFY_STATUS_REGISTER();
 #endif
 #ifdef ENABLE_INTERRUPTS
 		ENABLE_INTERRUPTS();
@@ -1898,21 +1898,21 @@ void lk_dmg_agb_flash_unbuffered(void) {
 							lk_dmg_change_bank(_lk_var16[LK_VAR16_LAST_BANK_ACCESSED]);
 						}
 					}
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 					lk_dmg_verify_data(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);
 #else
-					LK_Chromatic_verify_data(data_buffer[x]);
+					LK_ASYNC_VERIFY_DATA(data_buffer[x]);
 #endif
 					if (_timeout_check()) break;
 				}
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
-#ifdef LK_ASYNC
-			LK_DEVICE_FLUSH(verify_data_buffer, written);
+#if LK_ASYNC
+			LK_ASYNC_FLUSH(verify_data_buffer, written);
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] == 0xFF) continue;
 				if (data_buffer[x] != verify_data_buffer[x]) {
-					dprint("LK_Chromatic_verify_data(addr=%x, comp=%x): Timed out with %x!\r\n", base_address + x, data_buffer[x], verify_data_buffer[x]);
+					dprint("LK_ASYNC_VERIFY_DATA(addr=%x, comp=%x): Timed out with %x!\r\n", base_address + x, data_buffer[x], verify_data_buffer[x]);
 					_lk_var16[LK_VAR16_STATUS_REGISTER] = verify_data_buffer[x];
 					break;
 				}
@@ -1939,26 +1939,26 @@ void lk_dmg_agb_flash_unbuffered(void) {
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] != 0xFF) {
 					lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS], _lk_flashcmd_data[0]);		// 0=70
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 					lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]);
 #else
-					LK_Chromatic_verify_status_register();
+					LK_ASYNC_VERIFY_STATUS_REGISTER();
 					status_register_count++;
 #endif
 					lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS], _lk_flashcmd_data[1]);		// 0=10
 					lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);			// PA=PD
-#ifndef LK_ASYNC
+#if (!LK_ASYNC)
 					lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]);
 #else
-					LK_Chromatic_verify_status_register();
+					LK_ASYNC_VERIFY_STATUS_REGISTER();
 					status_register_count++;
 #endif
 					if (_timeout_check()) return;
 				}
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
-#ifdef LK_ASYNC
-			LK_Chromatic_verify_status_register_flush(verify_data_buffer, status_register_count);
+#if LK_ASYNC
+			LK_ASYNC_VERIFY_STATUS_REGISTER_FLUSH(verify_data_buffer, status_register_count);
 #endif
 		} else { // AGB
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
@@ -2287,7 +2287,7 @@ u32 lk_dmg_agb_calc_crc32(u32 length) {
 				PIN_ADDR_H(15);
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
-			LK_DEVICE_FLUSH(data_buffer, chunk_length);
+			LK_ASYNC_FLUSH(data_buffer, chunk_length);
 			for (u32 x = 0; x < chunk_length; x++) {
 				checksum = crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
 			}
