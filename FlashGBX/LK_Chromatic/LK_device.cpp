@@ -504,10 +504,10 @@ private:
     std::size_t _capacity {};
 
     void ensureCanAppend(const std::size_t required) {
-        if (const auto s = size(); s + required > _capacity) [[unlikely]] {
-
-            _begin = static_cast<uint8_t*>(std::realloc(_begin, _capacity * 2));
-            _capacity *= 2;
+        if (const auto s = size(); s + required > _capacity) {
+            const auto newCapacity = std::max<std::size_t>(s + required, _capacity * 2);
+            _begin = static_cast<uint8_t*>(std::realloc(_begin, newCapacity));
+            _capacity = newCapacity;
             _end = _begin + s;
         }
     }
@@ -552,7 +552,7 @@ struct CommandQueue {
     void pushBytes(const std::size_t count, Fn&& fn) {
         const auto base = _buffer.size();
         _buffer.pushBytes(count, std::forward<Fn>(fn));
-        const auto begin = _buffer.data();
+        const auto begin = _buffer.data() + base;
         const auto end = begin + count;
         for (auto it = begin; it < end; it += BytesPerCommand) {
           if (ProducesRX(static_cast<Command>(*it))) {
