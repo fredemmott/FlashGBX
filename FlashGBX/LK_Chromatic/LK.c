@@ -1089,7 +1089,6 @@ u8 lk_dmg_cart_read_sram(u16 address) {
 	return data;
 }
 void lk_dmg_cart_write_byte(u32 address, u16 value) {
-    LK_Chromatic_async_start();
 	// DMG-MMSA-JPN is very timing-sensitive and slower devices may cause too much delay, so
 	// the LK_VAR8_DMG_WRITE_CS_PULSE check is around everything and the entire code is duplicated.
 	if (_lk_var8[LK_VAR8_DMG_WRITE_CS_PULSE] == true) {
@@ -1127,11 +1126,8 @@ void lk_dmg_cart_write_byte(u32 address, u16 value) {
 		RAW_DMG_DATA_SET(0);
 		RAW_DMG_DATA_DIR_IN();
 	}
-    LK_Chromatic_async_end();
 }
 void lk_dmg_cart_read_data(void) {
-	LK_Chromatic_async_start();
-
 	PIN_RD_L();
 	PIN_CLK_L(); // Pocket Camera needs this
 	RAW_DMG_ADDR_DIR_OUT();
@@ -1175,7 +1171,6 @@ void lk_dmg_cart_read_data(void) {
 		left -= chunk_len;
 	}
 	PIN_RD_H();
-	LK_Chromatic_async_end();
 }
 void lk_dmg_mbc7_read_eeprom(void) {
 	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {

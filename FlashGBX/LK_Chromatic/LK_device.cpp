@@ -492,76 +492,160 @@ private:
     }
 };
 
-bool gAsyncEnabled = false;
-CommandBuffer gAsyncBuffer;
+struct CommandQueue {
+    void begin() {
+        if (std::exchange(_enabled, true)) [[unlikely]] {
+            LogError("CommandQueue::begin() called twice without end()");
+            abort();
+        }
+    }
 
+    void end() {
+        if (std::exchange(_enabled, false) == false) [[unlikely]] {
+            LogError("CommandQueue::end() called without begin()");
+            abort();
+        }
+
+        if (const auto unflushed = std::exchange(_expectedRX, 0); unflushed != 0) [[unlikely]] {
+            LogError("CommandQueue::end() called with {} expected RX bytes; call flush() first", unflushed);
+            abort();
+        }
+
+        if (_buffer.size() == 0) {
+            return;
+        }
+        flush(nullptr, 0);
+        _buffer.clear();
+    }
+
+    void push(const Command cmd, const uint8_t arg) {
+        _buffer.push(cmd, arg);
+
+        if (ProducesRX(cmd)) {
+            _expectedRX++;
+            SUPER_SPAMMY(TraceLoggingWrite(gTL, "push()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(cmd), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+        }
+    }
+
+    template<std::invocable<uint8_t*, std::size_t> Fn>
+    void pushBytes(const std::size_t count, Fn&& fn) {
+        const auto base = _buffer.size();
+        _buffer.pushBytes(count, std::forward<Fn>(fn));
+        const auto begin = _buffer.data();
+        const auto end = begin + count;
+        for (auto it = begin; it < end; it += BytesPerCommand) {
+          if (ProducesRX(static_cast<Command>(*it))) {
+                _expectedRX++;
+                SUPER_SPAMMY(TraceLoggingWrite(gTL, "pushBytes()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(cmd), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+            }
+        }
+    }
+
+    void flush(uint8_t* data, uint16_t rxCount);
+
+    static CommandQueue& get() {
+        static CommandQueue instance {};
+        return instance;
+    }
+
+    [[nodiscard]]
+    CommandBuffer& buffer() {
+        return _buffer;
+    }
+private:
+    CommandBuffer _buffer {};
+    bool _enabled { false };
+    std::size_t _expectedRX {};
+
+    CommandQueue() = default;
+};
 
 void SendToDevice(const Command cmd, const uint8_t arg = 0x00) {
-    if (gAsyncEnabled) {
-        gAsyncBuffer.push(cmd, arg);
-        return;
-    }
-
-#pragma pack(push, 1)
-    static struct {
-        Command cmd {};
-        uint8_t arg {};
-    } request {};
-#pragma pack(pop)
-    static_assert(sizeof(request) == BytesPerCommand);
-
-    request.cmd = cmd;
-    request.arg = arg;
-
-    const auto bytesWritten = gDevice->write(&request, sizeof(request)).submit().wait();
-    if (!bytesWritten.has_value()) {
-        LogError(
-            "SendToDevice failed: \"{}\" ({})",
-            libusb_strerror(bytesWritten.error()),
-            static_cast<int>(bytesWritten.error()));
-        return;
-    }
-    if (bytesWritten.value() != BytesPerCommand) {
-        LogError("SendToDevice failed: expected {} bytes written, got {}", BytesPerCommand, bytesWritten.value());
-    }
+    CommandQueue::get().push(cmd, arg);
 }
 
-[[nodiscard]]
-uint8_t RecvFromDevice() {
-    if (gAsyncEnabled) {
-        return 0xFF;
+template<std::unsigned_integral T>
+constexpr T HundredsOfNSToNOPCount(const T count) {
+    // The microcode is executed using the USB clock as the execution
+    // clock - so byte count == tick count.
+    //
+    // Our clock interval is 16.6667ns, so 100ns is 6 ticks. Our
+    // commands are currently 2 bytes == 2 ticks, so 33.333ns.
+    //
+    // If we have `foo(); NOP(); bar();` though, we have a 4 tick delay
+    // between `foo()` and `bar()`:
+    //
+    //     foo(); NOP(); bar();
+    //     |------| 2 bytes = 2 ticks
+    //            |------| 2 bytes = 2 ticks
+    //     |-------------| 4 bytes = 4 ticks
+    //
+    // ... and each additional NOP gets us another 2 ticks:
+    //
+    //     foo(); NOP(); NOP(); bar();
+    //     |------|      |------|
+    //            |------|
+    //     |--------------------| 6 bytes = 6 ticks
+    //
+    // So, for the first 100ns, we need two NOPs(), but after that, we need
+    // three NOPs per 100ns.
+    //
+    // For 2 bytes per command, that gets us:
+    //
+    //     (3 * count - 1)) + 2
+    //
+    // Let's generalize that:
+    static constexpr auto TicksPerCommand = BytesPerCommand;
+    // 2x for the interval between `foo()` and `bar()` in `foo(); NOP(); bar();`
+    static constexpr auto FirstNOPTicks = 2 * TicksPerCommand;
+    // 6x because 16.667ns tick rate = 100ns/6
+    const auto requiredTicks = 6 * count;
+    return 1 + ((requiredTicks - FirstNOPTicks) / TicksPerCommand);
+};
+
+// Used to force overload selection
+struct ForceImpl {};
+
+void PushNOPs(const uint8_t count, ForceImpl = {}) {
+    if (count == 0) {
+        return;
+    }
+    static constexpr uint8_t MaxCount = std::numeric_limits<decltype(count)>::max();
+    static constexpr auto MaxBytes = BytesPerCommand * static_cast<std::size_t>(MaxCount);
+
+    static constexpr auto Buffer = [] constexpr {
+        std::array<uint8_t, MaxBytes> ret {};
+        // Arguments are unused, so we can just use NOP as the arg
+        ret.fill(std::to_underlying(Command::NOP));
+        return ret;
+    }();
+
+    const auto nopCount = HundredsOfNSToNOPCount(count);
+    CommandQueue::get().pushBytes(nopCount * BytesPerCommand, [] (auto* p, const auto byteCount){
+        std::memcpy(p, Buffer.data(), byteCount);
+    });
+}
+
+template<std::unsigned_integral T>
+requires (!std::same_as<uint8_t, std::remove_cvref_t<T>>)
+void PushNOPs(const T count) {
+    const T full = count / 0xFF;
+    const auto partial = static_cast<uint8_t>(count % 0xFF);
+
+    for (T i = 0; i < full; i = i + 1) {
+        PushNOPs(0xFF, ForceImpl {});
     }
 
-    uint8_t buffer;
-
-    const auto bytesRead = gDevice->read(&buffer, 1).submit().wait();
-    if (!bytesRead.has_value()) [[unlikely]] {
-        LogError("RecvFromDevice failed: \"{}\" ({})", libusb_strerror(bytesRead.error()), static_cast<int>(bytesRead.error()));
-        return 0;
-    }
-    if (bytesRead.value() != 1) [[unlikely]] {
-        LogError("RecvFromDevice failed: expected 1 byte, got {}", bytesRead.value());
-        return 0;
-    }
-
-    return buffer;
+    PushNOPs(partial, ForceImpl {});
 }
 
 } // namespace
 
 extern "C" uint8_t LK_Chromatic_ping(const uint8_t cookie) {
-    TraceLoggingThreadActivity<gTL> tla;
-    TraceLoggingWriteStart(tla, "LK_Chromatic_ping()", TraceLoggingHexUInt8(cookie, "cookie"));
-
-    if (gAsyncEnabled) [[unlikely]] {
-        TraceLoggingWriteTagged(tla, "LK_Chromatic_ping()/asyncEnabled");
-        abort();
-    }
-
-    SendToDevice(Command::Ping, cookie);
-    const auto ret = RecvFromDevice();
-
-    TraceLoggingWriteStop(tla, "LK_Chromatic_ping()", TraceLoggingHexUInt8(ret, "ret"));
+    auto& cq = CommandQueue::get();
+    cq.push(Command::Ping, cookie);
+    uint8_t ret {};
+    cq.flush(&ret, 1);
     return ret;
 }
 
@@ -595,10 +679,20 @@ extern "C" void LK_Chromatic_async_end() {
 }
 
 extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {
+    CommandQueue::get().flush(data, len);
+}
+
+void CommandQueue::flush(uint8_t* const data, const uint16_t rxCount) {
+    const auto txCount = _buffer.size();
+
     // Limited by device-side TX buffer
-    if (len > 4096) [[unlikely]] {
+    if (rxCount> 4096) [[unlikely]] {
         LogError("Can't flush more than 4096 bytes");
-        return;
+        abort();
+    }
+    if (const auto unflushed = std::exchange(_expectedRX, 0); unflushed != rxCount) [[unlikely]] {
+        LogError("Expected to flush {} RX bytes, asked for {}", unflushed, rxCount);
+        abort();
     }
 
     LARGE_INTEGER qpBegin, qpEnd;
@@ -610,11 +704,10 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
     SPAMMY(TraceLoggingWriteStart(
         tla,
-        "LK_Chromatic_async_flush()",
+        "CommandQueue::flush()",
         TraceLoggingValue(txCount, "txCount"),
         TraceLoggingValue(rxCount, "rxCount"),
-        TraceLoggingValue(txCount / 2, "commandCount"),
-        TraceLoggingValue(len, "len")
+        TraceLoggingValue(txCount / 2, "commandCount")
     ));
 
     LibUSBTransfer::Result bytesWritten, bytesRead;
@@ -626,7 +719,7 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
         std::list<LibUSBTransfer> txOps;
         for (std::size_t i = 0; i < txCount; i += MaxTXChunk) {
             const auto count = std::min(i + (64*1024), txCount) - i;
-            txOps.emplace_back(gDevice->write(gAsyncBuffer.data() + i, count));
+            txOps.emplace_back(gDevice->write(_buffer.data() + i, count));
             txOps.back().submit();
         }
 
@@ -655,15 +748,15 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
 
     if (!bytesRead.has_value()) [[unlikely]] {
         error = true;
-        LogError("LK_Chromatic_async_flush()/rx-error: libusb status: {}", std::to_underlying(bytesRead.error()));
+        LogError("CommandQueue::flush()/rx-error: libusb status: {}", std::to_underlying(bytesRead.error()));
     } else if (bytesRead.value() != rxCount) {
         error = true;
-        LogError("LK_Chromatic_async_flush()/rx-count: expected {} actual {}", rxCount, bytesRead.value());
+        LogError("CommandQueue::flush()/rx-count: expected {} actual {}", rxCount, bytesRead.value());
     }
 
     if (!bytesWritten.has_value()) [[unlikely]] {
         error = true;
-        LogError("LK_Chromatic_async_flush()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
+        LogError("CommandQueue::flush()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
     } else if (bytesWritten.value() != txCount) [[unlikely]] {
         error = true;
         LogError("LK_Chromatic_async_flush()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
@@ -673,13 +766,12 @@ extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len
         abort();
     }
 
+
+    _buffer.clear();
     QueryPerformanceCounter(&qpEnd);
     const auto elapsed = SecondsBetween(qpBegin, qpEnd);
 
-    gAsyncBuffer.clear();
-
-    SPAMMY(TraceLoggingWriteStop(tla, "LK_Chromatic_async_flush()",
-        TraceLoggingValue(static_cast<double>(len) / elapsed, "data-EBps"),
+    TraceLoggingWriteStop(tla, "CommandQueue::flush()",
         TraceLoggingValue(static_cast<double>(txCount) / elapsed, "usb-tx-EBps"),
         TraceLoggingValue(static_cast<double>(rxCount) / elapsed, "usb-rx-EBps"),
         TraceLoggingValue(static_cast<double>(rxCount + txCount) / elapsed, "usb-trx-EBps")));
@@ -699,7 +791,7 @@ extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
 
 extern "C" uint8_t LK_Chromatic_DMG_RAW_DATA_GET() {
     SendToDevice(Command::GetData);
-    return RecvFromDevice();
+    return 0xFF; // async
 }
 
 extern "C" void LK_Chromatic_DELAY_100NS(const uint8_t count) {
@@ -851,6 +943,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
     if (!haveWorker.test_and_set()) {
         std::jthread {
             [] (const std::stop_token& stop) {
+                auto& cq = CommandQueue::get();
                 while (!stop.stop_requested()) {
                     uint8_t cmd {};
                     {
@@ -861,7 +954,9 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
                     }
                     TraceLoggingThreadActivity<gTL> tla;
                     TraceLoggingWriteStart(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
+                    cq.begin();
                     lk_loop(cmd);
+                    cq.end();
                     TraceLoggingWriteStop(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
                 }
             }

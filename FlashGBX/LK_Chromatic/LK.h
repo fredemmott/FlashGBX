@@ -13,9 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-void LK_Chromatic_async_start();
 void LK_Chromatic_async_flush(uint8_t* data, uint16_t len);
-void LK_Chromatic_async_end();
 
 // Device specifics
 #ifdef LK_DEVICE_HEADER
