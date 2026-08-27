@@ -36,7 +36,7 @@ void LK_Chromatic_flush(uint8_t* data, uint16_t len);
 #define LK_DEVICE_PING(COOKIE) LK_Chromatic_ping(COOKIE)
 #define LK_DEVICE_ON_SET_VARIABLE(SIZE, KEY, VALUE) LK_Chromatic_set_variable(SIZE, KEY, VALUE)
 
-#define LK_ASYNC_FLUSH(DATA, LEN) LK_Chromatic_flush(DATA, LEN)
+#define LK_DEVICE_FLUSH(DATA, LEN) LK_Chromatic_flush(DATA, LEN)
 
 /* This is a smell as it breaks the abstraction, but given different flash
  * methods submit different numbers of status register checks, we need to track

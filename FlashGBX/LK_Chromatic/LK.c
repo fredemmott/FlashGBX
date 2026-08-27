@@ -1172,7 +1172,7 @@ void lk_dmg_cart_read_data(void) {
 				PIN_RD_H();
 			}
 		}
-		LK_ASYNC_FLUSH(data_buffer, chunk_len);
+		LK_DEVICE_FLUSH(data_buffer, chunk_len);
 
 		lk_conn_send(data_buffer, chunk_len);
 		left -= chunk_len;
@@ -1190,7 +1190,7 @@ void lk_dmg_mbc7_read_eeprom(void) {
 		}
 	}
 
-	LK_ASYNC_FLUSH(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
+	LK_DEVICE_FLUSH(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
 
 	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
 		u16 data = 0;
@@ -1249,7 +1249,7 @@ void lk_dmg_verify_data(u32 addr, u16 comp) {
 	u8 data;
 	RAW_DMG_ADDR_SET(addr & 0xFFFF);
 	LK_Chromatic_verify_data(comp);
-	LK_ASYNC_FLUSH(&data, 1);
+	LK_DEVICE_FLUSH(&data, 1);
 	if (data != comp) {
 		dprint("lk_dmg_verify_data(addr=%x, comp=%x): Timed out with %x!\r\n", addr, comp, data);
 		_lk_var16[LK_VAR16_STATUS_REGISTER] = data;
@@ -1908,7 +1908,7 @@ void lk_dmg_agb_flash_unbuffered(void) {
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
 #ifdef LK_ASYNC
-			LK_ASYNC_FLUSH(verify_data_buffer, written);
+			LK_DEVICE_FLUSH(verify_data_buffer, written);
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] == 0xFF) continue;
 				if (data_buffer[x] != verify_data_buffer[x]) {
@@ -2287,7 +2287,7 @@ u32 lk_dmg_agb_calc_crc32(u32 length) {
 				PIN_ADDR_H(15);
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
-			LK_ASYNC_FLUSH(data_buffer, chunk_length);
+			LK_DEVICE_FLUSH(data_buffer, chunk_length);
 			for (u32 x = 0; x < chunk_length; x++) {
 				checksum = crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
 			}
