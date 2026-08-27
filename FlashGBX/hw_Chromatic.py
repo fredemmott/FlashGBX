@@ -50,6 +50,9 @@ class GbxDevice(LK_Device):
         self._lk.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
         self._lk.papi_open.restype = None
 
+        self._lk.papi_close.argtypes = []
+        self._lk.papi_close.restype = None
+
         self._lk.papi_send_to_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
         self._lk.papi_send_to_lk.restype = None
 
@@ -299,6 +302,7 @@ class GbxDevice(LK_Device):
         if self.DEVICE is None: return
         if self.DEVICE.is_open:
             dprint("Disconnecting from the device")
+            self._lk.papi_close()
             self.DEVICE.close()
         self.DEVICE = None
         self.MODE = None
