@@ -660,7 +660,7 @@ extern "C" void LK_Chromatic_dprint(const char* const data, va_list args) {
     static char buffer[1024];
     const auto count = vsnprintf(buffer, sizeof(buffer), data, args);
 
-    std::string_view s { data, static_cast<std::size_t>(count) };
+    std::string_view s { buffer, static_cast<std::size_t>(count) };
     if (s.ends_with('\n')) {
         s.remove_suffix(1);
     }
