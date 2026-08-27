@@ -50,11 +50,11 @@ class GbxDevice(LK_Device):
         self._lk.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
         self._lk.papi_open.restype = None
 
-        self._lk.papi_flashgbx_write.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
-        self._lk.papi_flashgbx_write.restype = None
+        self._lk.papi_send_to_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+        self._lk.papi_send_to_lk.restype = None
 
-        self._lk.papi_flashgbx_read.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
-        self._lk.papi_flashgbx_read.restype = None
+        self._lk.papi_recv_from_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+        self._lk.papi_recv_from_lk.restype = None
 
         self._lk.papi_set_on_error_callback.argtypes = [NATIVE_DATA_CALLBACK]
         self._lk.papi_set_on_error_callback.restype = None
@@ -213,7 +213,7 @@ class GbxDevice(LK_Device):
             junk = self.DEVICE.read(self.DEVICE.in_waiting)
 
             self.DEVICE.__class__ = MicrocodeDevice
-            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk.papi_flashgbx_read, self._lk.papi_flashgbx_write)
+            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk.papi_recv_from_lk, self._lk.papi_send_to_lk)
 
             self._lk.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, usb_interface)
 

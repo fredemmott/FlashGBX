@@ -123,27 +123,27 @@ uint8_t GetPingCookie() {
 
 }
 
-extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_read(uint8_t* data, const uint16_t count) {
+extern "C" LK_CHROMATIC_EXPORT void papi_recv_from_lk(uint8_t* data, const uint16_t count) {
     if (count == 0) {
         return;
     }
 
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
-    SPAMMY(TraceLoggingWriteStart(tla, "papi_flashgbx_read()"));
+    SPAMMY(TraceLoggingWriteStart(tla, "papi_recv_from_lk()"));
 
 
     toFlashGBX.read(data, count);
 
-    SPAMMY(TraceLoggingWriteStop(tla, "papi_flashgbx_read()"));
+    SPAMMY(TraceLoggingWriteStop(tla, "papi_recv_from_lk()"));
 }
 
-extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uint16_t count) {
+extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_t count) {
     if (count == 0) {
         return;
     }
 
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
-    SPAMMY(TraceLoggingWriteStart(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count")));
+    SPAMMY(TraceLoggingWriteStart(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 
     static std::atomic_flag haveWorker {};
     if (!haveWorker.test_and_set()) {
@@ -175,7 +175,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
         std::memcpy(dst, src, n);
     });
 
-    SPAMMY(TraceLoggingWriteStop(tla, "papi_flashgbx_write()", TraceLoggingValue(count, "count")));
+    SPAMMY(TraceLoggingWriteStop(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 }
 
 
