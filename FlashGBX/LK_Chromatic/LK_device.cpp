@@ -589,10 +589,6 @@ private:
     CommandQueue() = default;
 };
 
-void SendToDevice(const Command cmd, const uint8_t arg = 0x00) {
-    CommandQueue::get().push(cmd, arg);
-}
-
 template<std::unsigned_integral T>
 constexpr T HundredsOfNSToNOPCount(const T count) {
     // The microcode is executed using the USB clock as the execution
@@ -859,7 +855,7 @@ extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
 }
 
 extern "C" uint8_t LK_Chromatic_DMG_DATA_GET() {
-    SendToDevice(Command::GetData);
+    CommandQueue::get().push(Command::GetData);
     return 0xFF; // async
 }
 
@@ -892,11 +888,11 @@ extern "C" void LK_Chromatic_SET_PIN(const uint8_t pin, const uint8_t high) {
 
     const auto bitIdx = static_cast<uint8_t>(pin & 0b1111);
 
-    SendToDevice(command, (1 << (bitIdx + 4)) | (high << bitIdx));
+    CommandQueue::get().push(command, (1 << (bitIdx + 4)) | (high << bitIdx));
 }
 
 extern "C" void LK_Chromatic_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe) {
-    SendToDevice(
+    CommandQueue::get().push(
         Command::SetOutputEnable,
         (1 << (tristate_pin + 4)) | (oe << tristate_pin));
 }
@@ -910,12 +906,13 @@ extern "C" void LK_Chromatic_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
 }
 
 extern "C" void LK_Chromatic_DMG_ADDR_SET(const uint16_t address) {
-    SendToDevice(Command::SetAddressMSB, address >> 8);
-    SendToDevice(Command::SetAddressLSB, address & 0xff);
+    auto& cq = CommandQueue::get();
+    cq.push(Command::SetAddressMSB, address >> 8);
+    cq.push(Command::SetAddressLSB, address & 0xff);
 }
 
 extern "C" void LK_Chromatic_DMG_DATA_SET(const uint8_t data) {
-    SendToDevice(Command::SetData, data);
+    CommandQueue::get().push(Command::SetData, data);
 }
 
 extern "C" void LK_Chromatic_CONN_SEND(uint8_t* data, const uint16_t count) {
