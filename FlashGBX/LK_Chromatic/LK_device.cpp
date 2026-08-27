@@ -376,18 +376,6 @@ struct LibUSBDevice {
         std::ignore = libusb_clear_halt(_device, _epOut);
 
         dprint("LK_Chromatic: Opened libusb device {:#06x}/{:#06x} interface {:#04x}: epIn: {:#04x}, epOut: {:#04x}", vendorID, productID, interfaceNumber,_epIn, _epOut);
-
-        // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
-        const auto cookie = GetPingCookie();
-        const auto expected = (~cookie) & 0xff;
-
-        dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
-        const auto actual = LK_Chromatic_ping(cookie);
-        if (actual != expected) {
-            LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
-            return;
-        }
-        dprint("LK_Chromatic: Initial ping OK");
     }
 
     ~LibUSBDevice() {
@@ -998,6 +986,21 @@ extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t produc
     dprint("Attempting to open libusb device");
     gDevice.reset();
     gDevice.emplace(vendorID, productID, interfaceNumber);
+
+    // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
+    const auto cookie = GetPingCookie();
+    const auto expected = (~cookie) & 0xff;
+
+    dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
+    auto& cq = CommandQueue::get();
+    cq.begin();
+    const auto actual = LK_Chromatic_ping(cookie);
+    cq.end();
+    if (actual != expected) {
+        LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
+        return;
+    }
+    dprint("LK_Chromatic: Initial ping OK");
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
