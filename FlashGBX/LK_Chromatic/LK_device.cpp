@@ -35,7 +35,20 @@ TRACELOGGING_DEFINE_PROVIDER(
     "LK_Chromatic",
     (0x72b32b32, 0x28c9, 0x4298, 0xa4, 0x84, 0xc3, 0x85, 0xdd, 0xda, 0xa2, 0x1f));
 
-#define SPAMMY(...) {}
+// Anything other than 0 noticeably impacts performance, even if TraceLogging is disabled
+#define SPAM_LEVEL 0
+
+#if SPAM_LEVEL >= 1
+#define SPAMMY(x) x;
+#else
+#define SPAMMY(x) {}
+#endif
+
+#if SPAM_LEVEL >= 2
+#define SUPER_SPAMMY(x) x;
+#else
+#define SUPER_SPAMMY(x) {}
+#endif
 
 template<class... Args>
 void dprint(std::format_string<Args...> fmt, Args&&... args) {
@@ -698,11 +711,10 @@ void CommandQueue::flush(uint8_t* const data, const uint16_t rxCount) {
         abort();
     }
 
+#ifdef ENABLE_SPAMMY
     LARGE_INTEGER qpBegin, qpEnd;
     QueryPerformanceCounter(&qpBegin);
-
-    const auto txCount = gAsyncBuffer.size();
-    const auto rxCount = len;
+#endif
 
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
     SPAMMY(TraceLoggingWriteStart(
@@ -762,7 +774,7 @@ void CommandQueue::flush(uint8_t* const data, const uint16_t rxCount) {
         LogError("CommandQueue::flush()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
     } else if (bytesWritten.value() != txCount) [[unlikely]] {
         error = true;
-        LogError("LK_Chromatic_async_flush()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
+        LogError("CommandQueue::flush()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
     }
 
     if (error) [[unlikely]] {
@@ -771,13 +783,15 @@ void CommandQueue::flush(uint8_t* const data, const uint16_t rxCount) {
 
 
     _buffer.clear();
+#ifdef ENABLE_SPAMMY
     QueryPerformanceCounter(&qpEnd);
     const auto elapsed = SecondsBetween(qpBegin, qpEnd);
 
     TraceLoggingWriteStop(tla, "CommandQueue::flush()",
         TraceLoggingValue(static_cast<double>(txCount) / elapsed, "usb-tx-EBps"),
         TraceLoggingValue(static_cast<double>(rxCount) / elapsed, "usb-rx-EBps"),
-        TraceLoggingValue(static_cast<double>(rxCount + txCount) / elapsed, "usb-trx-EBps")));
+        TraceLoggingValue(static_cast<double>(rxCount + txCount) / elapsed, "usb-trx-EBps"));
+#endif
 }
 
 extern "C" uint32_t LK_Chromatic_TIMESTAMP_NOW() {
