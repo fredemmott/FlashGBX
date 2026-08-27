@@ -21,6 +21,9 @@ extern "C" {
 #include <Windows.h>
 #include <TraceLoggingProvider.h>
 #include <TraceLoggingActivity.h>
+
+#define SET_THREAD_NAME(x) {std::ignore = SetThreadDescription(GetCurrentThread(), L##x);}
+#define UNSET_THREAD_NAME() {std::ignore = SetThreadDescription(GetCurrentThread(), L"");}
 #endif
 
 namespace {
@@ -943,12 +946,15 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
     if (!haveWorker.test_and_set()) {
         std::jthread {
             [] (const std::stop_token& stop) {
+                SET_THREAD_NAME("LK -> Microcode worker");
+
                 auto& cq = CommandQueue::get();
                 while (!stop.stop_requested()) {
                     uint8_t cmd {};
                     {
                         if (!fromFlashGBX.read(&cmd, 1, stop)) {
                             haveWorker.clear();
+                            UNSET_THREAD_NAME();
                             return;
                         }
                     }
