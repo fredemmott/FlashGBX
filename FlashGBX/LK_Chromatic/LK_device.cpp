@@ -620,40 +620,17 @@ constexpr T HundredsOfNSToNOPCount(const T count) {
     return 1 + ((requiredTicks - FirstNOPTicks) / TicksPerCommand);
 };
 
-// Used to force overload selection
-struct ForceImpl {};
-
-void PushNOPs(const uint8_t count, ForceImpl = {}) {
+template<std::unsigned_integral T>
+void PushNOPs(const T count) {
     if (count == 0) {
         return;
     }
-    static constexpr uint8_t MaxCount = std::numeric_limits<decltype(count)>::max();
-    static constexpr auto MaxBytes = BytesPerCommand * static_cast<std::size_t>(MaxCount);
-
-    static constexpr auto Buffer = [] constexpr {
-        std::array<uint8_t, MaxBytes> ret {};
-        // Arguments are unused, so we can just use NOP as the arg
-        ret.fill(std::to_underlying(Command::NOP));
-        return ret;
-    }();
 
     const auto nopCount = HundredsOfNSToNOPCount(count);
     CommandQueue::get().pushBytes(nopCount * BytesPerCommand, [] (auto* p, const auto byteCount){
-        std::memcpy(p, Buffer.data(), byteCount);
+        // Argument is ignored, so we might as well fill it with NOPs as well :)
+        std::memset(p, std::to_underlying(Command::NOP), byteCount);
     });
-}
-
-template<std::unsigned_integral T>
-requires (!std::same_as<uint8_t, std::remove_cvref_t<T>>)
-void PushNOPs(const T count) {
-    const T full = count / 0xFF;
-    const auto partial = static_cast<uint8_t>(count % 0xFF);
-
-    for (T i = 0; i < full; i = i + 1) {
-        PushNOPs(0xFF, ForceImpl {});
-    }
-
-    PushNOPs(partial, ForceImpl {});
 }
 
 } // namespace
