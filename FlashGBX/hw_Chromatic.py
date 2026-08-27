@@ -185,7 +185,7 @@ class GbxDevice(LK_Device):
             self.FW["fw_ver/ChromaticDumper"] = f"{year}.{month}.{day}.{revision}"
             self.FW["fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
 
-            if self.FW["fw_ver/ChromaticDumper"] != "2026.08.18.0":
+            if self.FW["fw_ver/ChromaticDumper"] != "2026.08.27.0":
                 dprint("Running microcode firmware, but not a supported version")
                 self.FW = None
                 return False
