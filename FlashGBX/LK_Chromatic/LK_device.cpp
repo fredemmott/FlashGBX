@@ -54,6 +54,9 @@ template<class... Args>
 void dprint(std::format_string<Args...> fmt, Args&&... args) {
     const auto s = std::vformat(fmt.get(), std::make_format_args(args...));
     TraceLoggingWrite(gTL, "dprint", TraceLoggingCountedString(s.data(), s.size(), "message"));
+
+    const auto ds = s + "\n";
+    OutputDebugStringA(ds.c_str());
 }
 
 [[nodiscard]]
