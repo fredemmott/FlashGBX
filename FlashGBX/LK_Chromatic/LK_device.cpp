@@ -803,81 +803,25 @@ extern "C" uint8_t LK_Chromatic_DMG_DATA_GET() {
 }
 
 extern "C" void LK_Chromatic_DELAY_100NS(const uint8_t count) {
-    static constexpr uint8_t MaxCount = 5;
-
     if (count == 0) [[unlikely]] {
         return;
     }
 
-    if (count > MaxCount) [[unlikely]] {
-        LogError("LK_Chromatic_DELAY_100NS() count {} is greater than max of {}", count, MaxCount);
-        abort();
-    }
-
-    if (gAsyncEnabled) {
-        static constexpr auto ToNOPCount = [](const uint8_t count) constexpr {
-            // The microcode is executed using the USB clock as the execution
-            // clock - so byte count == tick count.
-            //
-            // Our clock interval is 16.6667ns, so 100ns is 6 ticks. Our
-            // commands are currently 2 bytes, so 33.333ns per command.
-            //
-            // If we have `foo(); NOP(); bar();` though, we have a 4 tick delay
-            // between `foo()` and `bar()`:
-            //
-            //     foo(); NOP(); bar();
-            //     |------| 2 bytes = 2 ticks
-            //            |------| 2 bytes = 2 ticks
-            //     |-------------| 4 bytes = 4 ticks
-            //
-            // ... and each additional NOP gets us another 2 ticks:
-            //
-            //     foo(); NOP(); NOP(); bar();
-            //     |------|      |------|
-            //            |------|
-            //     |--------------------| 6 bytes = 6 ticks
-            //
-            // So, for the first 100ns, we need two NOPs(), but after that, we need
-            // three NOPs per 100ns.
-            //
-            // For 2 bytes per command, that gets us:
-            //
-            //     (3 * count - 1)) + 2
-            //
-            // Let's generalize that:
-            static constexpr auto TicksPerCommand = BytesPerCommand;
-            // 2x for the interval between `foo()` and `bar()` in `foo(); NOP(); bar();`
-            static constexpr auto FirstNOPTicks = 2 * TicksPerCommand;
-            // 6x because 16.667ns tick rate = 100ns/6
-            const auto requiredTicks = 6 * count;
-            return 1 + ((requiredTicks - FirstNOPTicks) / TicksPerCommand);
-        };
-
-        static constexpr uint8_t MaxNOPCount = ToNOPCount(MaxCount);
-        static constexpr uint8_t MaxNOPBytes = BytesPerCommand * MaxNOPCount;
-
-        static constexpr auto NOPBuffer = [] constexpr {
-            std::array<uint8_t, MaxNOPBytes> ret {};
-            // Arguments are unused, so we can just use NOP as the arg
-            ret.fill(std::to_underlying(Command::NOP));
-            return ret;
-        }();
-
-        const auto nopCount = ToNOPCount(count);
-        gAsyncBuffer.pushBytes(nopCount * BytesPerCommand, [] (auto* p, const auto byteCount){
-            std::memcpy(p, NOPBuffer.data(), byteCount);
-        });
-    } else {
-        // The OS is going to over-wait, but non-async mode is so slow anyway it doesn't matter
-        std::this_thread::sleep_for(std::chrono::nanoseconds(static_cast<uint16_t>(count * 100)));
-    }
+    const auto nopCount = HundredsOfNSToNOPCount(count);
+    PushNOPs(nopCount);
 }
 
-extern "C" void LK_Chromatic_DELAY_MICROS(const uint16_t duration) {
-    if (gAsyncEnabled) {
-        LogError("DELAY_MICROS should not be called in an async batch");
+extern "C" void LK_Chromatic_DELAY_MICROS(const uint32_t duration) {
+    if (duration == 0) [[unlikely]] {
+        return;
     }
-    std::this_thread::sleep_for(std::chrono::microseconds(duration));
+
+    // Maybe I should add a Command::DelayMicros to the firmware again to reduce
+    // input spam - but then we'd need an input buffer on the FPGA to accumulate
+    // commands while the wait is in progress.
+
+    const auto nopCount = HundredsOfNSToNOPCount(static_cast<uint64_t>(duration) * 10);
+    PushNOPs(nopCount);
 }
 
 extern "C" void LK_Chromatic_SET_PIN(const uint8_t pin, const uint8_t high) {

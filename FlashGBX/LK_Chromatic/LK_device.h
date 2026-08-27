@@ -39,7 +39,7 @@ inline void dprint(const char* const fmt, ...) {
 #endif
 
 void LK_Chromatic_DELAY_100NS(uint8_t);
-void LK_Chromatic_DELAY_MICROS(uint16_t);
+void LK_Chromatic_DELAY_MICROS(uint32_t);
 // 60mhz = 16.667ns ticks, and 3 ticks per instruction; while a NOP takes 3 ticks,
 // given:
 //
