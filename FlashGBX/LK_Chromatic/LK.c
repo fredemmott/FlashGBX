@@ -226,6 +226,8 @@ void lk_loop(u8 command) {
 				u8 size = lk_conn_recv_u8();
 				u32 key = lk_conn_recv_u32();
 				u32 value = lk_conn_recv_u32();
+
+				LK_Chromatic_set_variable(size, key, value);
 				
 				if (size == 1) {
 					_lk_var8[key] = value;
@@ -683,6 +685,13 @@ void lk_loop(u8 command) {
 						}
 					}
 				}
+#ifdef LK_ASYNC_MICROCODE
+				u32 flush_count = LK_Chromatic_get_pending_verify_status_register_count();
+				if (flush_count) {
+					lk_conn_send_u8(LK_Chromatic_verify_status_register_flush(verify_data_buffer, flush_count));
+					break;
+				}
+#endif
 
 				if (_timeout_check()) {
 					lk_conn_send_u8(LK_STATUS_ERROR);
@@ -1210,6 +1219,7 @@ void lk_dmg_mbc7_write_eeprom(void) {
 }
 
 void lk_dmg_verify_data(u32 addr, u16 comp) {
+#ifndef LK_ASYNC_MICROCODE
 	_timeout_init();
 	u8 data;
 	PIN_RD_L();
@@ -1234,8 +1244,23 @@ void lk_dmg_verify_data(u32 addr, u16 comp) {
 			break;
 		}
 	}
+#else
+	/* This shouldn't be called *per-byte*, but the buffered mode can end up
+	    calling this once per chunk, so let's still push the loop to
+	    microcode instead of adding millis-to-micros of USB transactions per
+	    iteration */
+	u8 data;
+	RAW_DMG_ADDR_SET(addr & 0xFFFF);
+	LK_Chromatic_verify_data(comp);
+	LK_Chromatic_async_flush(&data, 1);
+	if (data != comp) {
+		dprint("lk_dmg_verify_data(addr=%x, comp=%x): Timed out with %x!\r\n", addr, comp, data);
+		_lk_var16[LK_VAR16_STATUS_REGISTER] = data;
+	}
+#endif
 }
 void lk_dmg_verify_status_register(u32 addr) {
+#ifndef LK_ASYNC_MICROCODE
 	_timeout_init();
 	RAW_DMG_DATA_SET(0);
 	RAW_DMG_DATA_DIR_IN();
@@ -1258,6 +1283,15 @@ void lk_dmg_verify_status_register(u32 addr) {
 		}
 	}
 	RAW_DMG_DATA_DIR_OUT();
+#else
+	/* Like lk_dmg_verify_data(), this shouldn't be called once per byte,
+	 * but can be called once per N bytes by buffered writes. */
+	u8 data;
+	RAW_DMG_ADDR_SET(addr & 0xFFFF);
+	LK_Chromatic_verify_status_register();
+	/* Calls dprint and sets LK_VAR16_STATUS_REGISTER for us */
+	LK_Chromatic_verify_status_register_flush(&data, 1);
+#endif
 }
 void lk_dmg_flash_write_byte(u32 address, u16 value) {
 	PIN_WR_H();
@@ -1350,7 +1384,12 @@ void lk_dmg_flash_mbc6(u16 buffer_offset) {
 	lk_dmg_cart_write_byte(_lk_var32[LK_VAR32_ADDRESS]-1, 0x00);
 	
 	// Status register check
+#ifndef LK_ASYNC_MICROCODE
 	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
+#else
+	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
+	LK_Chromatic_verify_status_register();
+#endif
 }
 
 void lk_dmg_flash_E201264(u16 buffer_offset) {
@@ -1366,7 +1405,12 @@ void lk_dmg_flash_E201264(u16 buffer_offset) {
 	lk_dmg_cart_write_byte(_lk_var32[LK_VAR32_ADDRESS], 0x00);
 	_lk_var32[LK_VAR32_ADDRESS] += 128;
 	lk_dmg_cart_write_byte(0x4000, 0x70);
-	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS] - 1);
+#ifndef LK_ASYNC_MICROCODE
+	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
+#else
+	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
+	LK_Chromatic_verify_status_register();
+#endif
 	lk_dmg_cart_write_byte(0x4000, 0xFF);
 }
 
@@ -1382,7 +1426,12 @@ void lk_dmg_flash_bung_16m(u16 buffer_offset) {
 		lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS]++, data_buffer[buffer_offset+x]);
 	}
 	_delay_us(100);
-	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS] - 1);
+#ifndef LK_ASYNC_MICROCODE
+	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
+#else
+	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
+	LK_Chromatic_verify_status_register();
+#endif
 }
 
 void lk_dmg_flash_datel_orbitv2() {
@@ -1420,8 +1469,13 @@ void lk_dmg_flash_mmsa(u16 buffer_offset) {
 	}
 	lk_dmg_cart_write_byte(_lk_var32[LK_VAR32_ADDRESS] - 1, 0xFF);
 	_delay_ms(4);
-	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS] - 1);
-	#ifdef ENABLE_INTERRUPTS
+#ifndef LK_ASYNC_MICROCODE
+	lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]-1);
+#else
+	RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]-1);
+	LK_Chromatic_verify_status_register();
+#endif
+#ifdef ENABLE_INTERRUPTS
 		ENABLE_INTERRUPTS();
 	#endif
 }
@@ -1847,12 +1901,16 @@ void lk_dmg_agb_flash_unbuffered(void) {
 							lk_dmg_change_bank(_lk_var16[LK_VAR16_LAST_BANK_ACCESSED]);
 						}
 					}
-					// lk_dmg_verify_data(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);
+#ifndef LK_ASYNC_MICROCODE
+					lk_dmg_verify_data(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);
+#else
 					LK_Chromatic_verify_data(data_buffer[x]);
+#endif
 					if (_timeout_check()) break;
 				}
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
+#ifdef LK_ASYNC_MICROCODE
 			LK_Chromatic_async_flush(verify_data_buffer, written);
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] == 0xFF) continue;
@@ -1862,6 +1920,7 @@ void lk_dmg_agb_flash_unbuffered(void) {
 					break;
 				}
 			}
+#endif
 		} else { // AGB
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
 				data = data_buffer[x + 1] << 8 | data_buffer[x];
@@ -1879,17 +1938,31 @@ void lk_dmg_agb_flash_unbuffered(void) {
 
 	} else { /*if ((_lk_var8[LK_VAR8_FLASH_COMMAND_SET] == FLASH_COMMAND_SET_INTEL)) {*/
 		if (_lk_var8[LK_VAR8_CART_MODE] == LK_MODE_DMG) {
+			u16 status_register_count = 0;
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] != 0xFF) {
 					lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS], _lk_flashcmd_data[0]);		// 0=70
+#ifndef LK_ASYNC_MICROCODE
 					lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]);
+#else
+					LK_Chromatic_verify_status_register();
+					status_register_count++;
+#endif
 					lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS], _lk_flashcmd_data[1]);		// 0=10
 					lk_dmg_flash_write_byte(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);			// PA=PD
+#ifndef LK_ASYNC_MICROCODE
 					lk_dmg_verify_status_register(_lk_var32[LK_VAR32_ADDRESS]);
+#else
+					LK_Chromatic_verify_status_register();
+					status_register_count++;
+#endif
 					if (_timeout_check()) return;
 				}
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
+#ifdef LK_ASYNC_MICROCODE
+			LK_Chromatic_verify_status_register_flush(verify_data_buffer, status_register_count);
+#endif
 		} else { // AGB
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
 				data = data_buffer[x + 1] << 8 | data_buffer[x];

@@ -181,6 +181,9 @@ enum class Command : uint8_t {
     SetPinsA = 7,
     SetPinsB = 8,
     VerifyData = 9,
+    VerifyStatusRegister = 10,
+    SetStatusRegisterMask = 11,
+    SetStatusRegisterValue  = 12,
 };
 
 [[nodiscard]]
@@ -191,6 +194,7 @@ bool ProducesRX(const Command cmd) noexcept {
     case Ping:
     case GetData:
     case VerifyData:
+    case VerifyStatusRegister:
         return true;
     default:
         return false;
@@ -492,10 +496,10 @@ struct CommandBuffer {
     std::size_t size() const { return _end - _begin; }
 
     [[nodiscard]]
-    uint8_t* begin() { return _begin; }
+    uint8_t* begin() const noexcept { return _begin; }
 
     [[nodiscard]]
-    uint8_t* end() { return _end; }
+    uint8_t* end() const noexcept { return _end; }
 
 private:
 
@@ -514,14 +518,22 @@ private:
 };
 
 struct CommandQueue {
-    void begin() {
+    [[nodiscard]] uint8_t* begin() const noexcept {
+        return _buffer.begin();
+    }
+
+    [[nodiscard]] uint8_t* end() const noexcept {
+        return _buffer.end();
+    }
+
+    void start_batch() {
         if (std::exchange(_enabled, true)) [[unlikely]] {
             LogError("CommandQueue::begin() called twice without end()");
             abort();
         }
     }
 
-    void end() {
+    void end_batch() {
         if (std::exchange(_enabled, false) == false) [[unlikely]] {
             LogError("CommandQueue::end() called without begin()");
             abort();
@@ -539,7 +551,7 @@ struct CommandQueue {
         _buffer.clear();
     }
 
-    void push(const Command cmd, const uint8_t arg) {
+    void push(const Command cmd, const uint8_t arg = 0x00) {
         _buffer.push(cmd, arg);
 
         if (ProducesRX(cmd)) {
@@ -659,7 +671,7 @@ extern "C" void LK_Chromatic_dprint(const char* const data, va_list args) {
 }
 
 extern "C" void LK_Chromatic_verify_data(const uint8_t expected) {
-    // `lk_dmg_verify_data`, with the loop body moved to a dedicated microcode command
+    // `lk_dmg_verify_data()`, with the loop body moved to a dedicated microcode command
     PIN_RD_L();
     PIN_CLK_L(); // Pocket Camera needs this
     RAW_DMG_DATA_SET(0);
@@ -667,6 +679,71 @@ extern "C" void LK_Chromatic_verify_data(const uint8_t expected) {
     RAW_DMG_ADDR_DIR_OUT();
     // Address should still be set from the write
     CommandQueue::get().push(Command::VerifyData, expected);
+}
+
+extern "C" void LK_Chromatic_verify_status_register() {
+    // `lk_dmg_verify_status_register()`, with the loop body moved to a dedicated microcode command
+    RAW_DMG_DATA_SET(0);
+    RAW_DMG_DATA_DIR_IN();
+	RAW_DMG_ADDR_DIR_OUT();
+    // Address should have already been set by the caller
+    CommandQueue::get().push(Command::VerifyStatusRegister);
+    RAW_DMG_DATA_DIR_OUT();
+}
+
+extern "C" uint8_t LK_Chromatic_verify_status_register_flush(uint8_t* const buffer, const uint32_t count) {
+    const auto mask = _lk_var16[LK_VAR16_STATUS_REGISTER_MASK];
+    const auto value = _lk_var16[LK_VAR16_STATUS_REGISTER_VALUE];
+
+    CommandQueue::get().flush(buffer, count);
+    const auto begin = buffer;
+    const auto end = buffer + count;
+
+    for (auto it = begin; it != end; ++it) {
+        if (((*it) & mask) != value) {
+            dprint("LK_Chromatic_verify_status_register_flush(): Timed out with {}!", *it);
+            _lk_var16[LK_VAR16_STATUS_REGISTER] = *it;
+            return LK_STATUS_ERROR;
+        }
+    }
+    return LK_STATUS_OK;
+}
+
+extern "C" uint32_t LK_Chromatic_get_pending_verify_status_register_count() {
+    const auto& cq = CommandQueue::get();
+
+    std::size_t ret {};
+
+    for (auto it = cq.begin(); it != cq.end(); it += BytesPerCommand) {
+        if (static_cast<Command>(*it) == Command::VerifyStatusRegister) {
+            ++ret;
+        }
+    }
+
+    if (ret > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
+        LogError("RX count > u32 max");
+        abort();
+    }
+    if (ret > CHUNK_MAX_LEN) [[unlikely]] {
+        LogError("RX count ({}) > CHUNK_MAX_LEN ({})", ret, CHUNK_MAX_LEN);
+        abort();
+    }
+    return static_cast<uint32_t>(ret);
+}
+
+extern "C" void LK_Chromatic_set_variable(const uint8_t size, const uint32_t key, const uint32_t value) {
+    if (size != 2) {
+        return;
+    }
+    switch (key) {
+    case LK_VAR16_STATUS_REGISTER_MASK:
+        CommandQueue::get().push(Command::SetStatusRegisterMask, value & 0xFF);
+        break;
+    case LK_VAR16_STATUS_REGISTER_VALUE:
+        CommandQueue::get().push(Command::SetStatusRegisterValue, value & 0xFF);
+        break;
+    default: ;
+    }
 }
 
 extern "C" void LK_Chromatic_async_flush(uint8_t* const data, const uint16_t len) {
@@ -893,9 +970,9 @@ extern "C" LK_CHROMATIC_EXPORT void papi_flashgbx_write(uint8_t* data, const uin
                     }
                     TraceLoggingThreadActivity<gTL> tla;
                     TraceLoggingWriteStart(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
-                    cq.begin();
+                    cq.start_batch();
                     lk_loop(cmd);
-                    cq.end();
+                    cq.end_batch();
                     TraceLoggingWriteStop(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
                 }
             }
@@ -921,9 +998,9 @@ extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t produc
 
     dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
     auto& cq = CommandQueue::get();
-    cq.begin();
+    cq.start_batch();
     const auto actual = LK_Chromatic_ping(cookie);
-    cq.end();
+    cq.end_batch();
     if (actual != expected) {
         LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
         return;

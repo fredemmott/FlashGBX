@@ -25,10 +25,25 @@
 #define LK_CART_PRESENCE_SWITCH_SUPPORT		false
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
+#define LK_ASYNC_MICROCODE true
+
 uint8_t LK_Chromatic_ping(uint8_t);
 void LK_Chromatic_verify_data(uint8_t expected);
-
+void LK_Chromatic_set_variable(uint8_t size, uint32_t key, uint32_t value);
 void LK_Chromatic_dprint(const char*, va_list);
+
+/* This is a smell as it breaks the abstraction, but given different flash
+ * methods submit different numbers of status register checks, we need to track
+ * how many status register responses we're expecting.
+ *
+ * We could return the count from the various flash method implementation
+ * functions, but that would be brittle, hard to test, and require changing the
+ * signature of all of them, making rebasing/merging future changes more
+ * difficult. */
+uint32_t LK_Chromatic_get_pending_verify_status_register_count();
+void LK_Chromatic_verify_status_register();
+// returns LK_STATUS_OK | LK_STATUS_ERROR
+uint8_t LK_Chromatic_verify_status_register_flush(uint8_t* buffer, uint32_t count);
 
 #ifndef LK_DEVICE_NO_DPRINT
 inline void dprint(const char* const fmt, ...) {
