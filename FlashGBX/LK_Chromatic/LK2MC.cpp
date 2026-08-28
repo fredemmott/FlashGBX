@@ -40,6 +40,19 @@ enum class StateBits : uint8_t {
     CartPower = 1 << 1
 };
 
+enum class SetPinsA : uint8_t {
+    CLK = 1 << 0,
+    WR = 1 << 1,
+    RD = 1 << 2,
+    CS = 1 << 3,
+};
+
+enum class SetPinsB : uint8_t {
+    A15 = 1 << 0,
+    RST = 1 << 1,
+    AUDIO = 1 << 2,
+};
+
 [[nodiscard]]
 bool ProducesRX(const Command cmd) noexcept {
     using enum Command;
@@ -428,13 +441,26 @@ extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
 }
 
 extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
-    const auto command = ((pin & LK2MC_SET_PINS_COMMAND_MASK) == LK2MC_SET_PINS_A_MASK)
-        ? Command::SetPinsA
-        : Command::SetPinsB;
-
-    const auto bitIdx = static_cast<uint8_t>(pin & 0b1111);
-
-    CommandQueue::get().push(command, (1 << (bitIdx + 4)) | (high << bitIdx));
+    const auto push = [high](const Command cmd, const auto mcPin) {
+        const auto mask = std::to_underlying(mcPin);
+        const auto sel = (mask << 4);
+        const auto value = high ? mask : 0;
+        CommandQueue::get().push(cmd, (sel | value) & 0xFF);
+    };
+    const auto a = [&push](const SetPinsA mcPins) { push(Command::SetPinsA, mcPins); };
+    const auto b = [&push](const SetPinsB mcPins) { push(Command::SetPinsB, mcPins); };
+    switch (pin) {
+    case PIN_CLK: a(SetPinsA::CLK); break;
+    case PIN_WR: a(SetPinsA::WR); break;
+    case PIN_RD: a(SetPinsA::RD); break;
+    case PIN_CS: a(SetPinsA::CS); break;
+    case LK2MC_PIN_A15: b(SetPinsB::A15); break;
+    case PIN_CS2: b(SetPinsB::RST); break; // CS2 is AGB name for RST pin
+    case PIN_AUDIO: b(SetPinsB::AUDIO); break;
+    default:
+        LogError("LK2MC_SET_PIN called with invalid pin {}", pin);
+        abort();
+    }
 }
 
 extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe) {
