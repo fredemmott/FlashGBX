@@ -23,7 +23,7 @@
 #define LK_PCB_VERSION						1
 #define LK_POWER_CONTROL_SUPPORT			true
 #define LK_BOOTLOADER_RESET_SUPPORT			false
-#define LK_CART_PRESENCE_SWITCH_SUPPORT		false
+#define LK_CART_PRESENCE_SWITCH_SUPPORT			true
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
 #define LK_ASYNC					true
@@ -122,8 +122,9 @@ void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
 #define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)
 
-#define CART_POWER_ON()						{}
-#define CART_POWER_OFF()					{}
+void LK2MC_CART_ENABLE(uint8_t enable);
+#define CART_POWER_ON()						LK2MC_CART_ENABLE(1)
+#define CART_POWER_OFF()					LK2MC_CART_ENABLE(0)
 #define ACTIVITY_LED_ON()					{}
 #define ACTIVITY_LED_OFF()					{}
 #define SET_VOLTAGE_3_3V()					{}
@@ -164,7 +165,8 @@ inline void lk_send_byte_to_host(const uint8_t data) {
 #define DISABLE_INTERRUPTS()				{}
 #define ENABLE_INTERRUPTS()					{}
 
-// #define CART_PRESENCE_SWITCH_GET()			() // 0 = off, 1 = on
+uint8_t LK2MC_CART_PRESENCE_SWITCH_GET();
+#define CART_PRESENCE_SWITCH_GET()			LK2MC_CART_PRESENCE_SWITCH_GET()
 // #define CART_MODE_SWITCH_GET()				() // 0 = AGB, 1 = DMG
 
 // Moved to LK.h so it can affect the size of data_buffer

@@ -31,6 +31,13 @@ enum class Command : uint8_t {
     VerifyStatusRegister = 10,
     SetStatusRegisterMask = 11,
     SetStatusRegisterValue  = 12,
+    GetStateBits = 13,
+    SetCartPower = 14
+};
+
+enum class StateBits : uint8_t {
+    CartPresent = 1 << 0,
+    CartPower = 1 << 1
 };
 
 [[nodiscard]]
@@ -42,6 +49,7 @@ bool ProducesRX(const Command cmd) noexcept {
     case GetData:
     case VerifyData:
     case VerifyStatusRegister:
+    case GetStateBits:
         return true;
     default:
         return false;
@@ -169,7 +177,7 @@ struct CommandQueue {
         for (auto it = begin; it < end; it += BytesPerCommand) {
           if (ProducesRX(static_cast<Command>(*it))) {
                 _expectedRX++;
-                SUPER_SPAMMY(TraceLoggingWrite(gTL, "pushBytes()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(cmd), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+                SUPER_SPAMMY(TraceLoggingWrite(gTL, "pushBytes()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(*it), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
             }
         }
     }
@@ -401,6 +409,22 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
 
     const auto nopCount = HundredsOfNSToNOPCount(static_cast<uint64_t>(duration) * 10);
     PushNOPs(nopCount);
+}
+
+extern "C" void LK2MC_CART_ENABLE(const uint8_t enable) {
+    auto& cq = CommandQueue::get();
+    cq.push(Command::SetCartPower, enable == 1);
+    cq.flush(nullptr, 0);
+}
+
+extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
+    auto& cq = CommandQueue::get();
+    cq.push(Command::GetStateBits);
+
+    uint8_t value;
+    cq.flush(&value, 1);
+
+    return value;
 }
 
 extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
