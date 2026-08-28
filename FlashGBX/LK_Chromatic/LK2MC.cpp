@@ -404,7 +404,7 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
 }
 
 extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
-    const auto command = ((pin & LK_CHROMATIC_SET_PINS_COMMAND_MASK) == LK_CHROMATIC_SET_PINS_A_MASK)
+    const auto command = ((pin & LK2MC_SET_PINS_COMMAND_MASK) == LK2MC_SET_PINS_A_MASK)
         ? Command::SetPinsA
         : Command::SetPinsB;
 
@@ -424,7 +424,7 @@ extern "C" void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
         LogError("SET_ADDR_PIN called with pin != 15 ({})", pin);
         return;
     }
-    LK2MC_SET_PIN(LK_CHROMATIC_PIN_A15, high);
+    LK2MC_SET_PIN(LK2MC_PIN_A15, high);
 }
 
 extern "C" void LK2MC_DMG_ADDR_SET(const uint16_t address) {
