@@ -21,7 +21,7 @@
 
 #define LK_DEVICE_NAME 						"Chromatic"
 #define LK_PCB_VERSION						1
-#define LK_POWER_CONTROL_SUPPORT			true
+#define LK_POWER_CONTROL_SUPPORT			false
 #define LK_BOOTLOADER_RESET_SUPPORT			false
 #define LK_CART_PRESENCE_SWITCH_SUPPORT			true
 #define LK_CART_MODE_SWITCH_SUPPORT			false
@@ -117,9 +117,8 @@ void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
 #define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)
 
-void LK2MC_CART_ENABLE(uint8_t enable);
-#define CART_POWER_ON()						LK2MC_CART_ENABLE(1)
-#define CART_POWER_OFF()					LK2MC_CART_ENABLE(0)
+#define CART_POWER_ON()						{}
+#define CART_POWER_OFF()					{}
 #define ACTIVITY_LED_ON()					{}
 #define ACTIVITY_LED_OFF()					{}
 #define SET_VOLTAGE_3_3V()					{}

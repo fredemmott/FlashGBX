@@ -32,12 +32,10 @@ enum class Command : uint8_t {
     SetStatusRegisterMask = 11,
     SetStatusRegisterValue  = 12,
     GetStateBits = 13,
-    SetCartPower = 14
 };
 
 enum class StateBits : uint8_t {
     CartPresent = 1 << 0,
-    CartPower = 1 << 1
 };
 
 enum class SetPinsA : uint8_t {
@@ -425,12 +423,6 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
 
     const auto nopCount = HundredsOfNSToNOPCount(static_cast<uint64_t>(duration) * 10);
     PushNOPs(nopCount);
-}
-
-extern "C" void LK2MC_CART_ENABLE(const uint8_t enable) {
-    auto& cq = CommandQueue::get();
-    cq.push(Command::SetCartPower, enable == 1);
-    cq.flush(nullptr, 0);
 }
 
 extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
