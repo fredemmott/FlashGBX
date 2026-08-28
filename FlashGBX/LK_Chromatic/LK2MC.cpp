@@ -195,7 +195,7 @@ struct CommandQueue {
         }
     }
 
-    void flush(uint8_t* data, uint16_t rxCount);
+    void flush(uint8_t* rxData, uint16_t rxCount);
 
     static CommandQueue& get() {
         static CommandQueue instance {};
@@ -367,8 +367,11 @@ extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
     CommandQueue::get().flush(data, len);
 }
 
-void CommandQueue::flush(uint8_t* const data, const uint16_t rxCount) {
+void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
     const auto txCount = _buffer.size();
+    if ((txCount == 0) && (rxCount == 0)) {
+        return;
+    }
 
     // Limited by device-side TX buffer
     if (rxCount> 4096) [[unlikely]] {
@@ -380,7 +383,7 @@ void CommandQueue::flush(uint8_t* const data, const uint16_t rxCount) {
         abort();
     }
 
-    mc_exec_batch(_buffer.data(), txCount, data, rxCount);
+    mc_exec_batch(_buffer.data(), txCount, rxData, rxCount);
 
     _buffer.clear();
 }
