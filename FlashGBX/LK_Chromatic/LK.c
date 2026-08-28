@@ -551,6 +551,11 @@ void lk_loop(u8 command) {
 				ACTIVITY_LED_ON();
 				for (u8 x = 0; x < num; x++) {
 					p_cart_write_flash_byte(_lk_flashcmd_addr[x+16], _lk_flashcmd_data[x+16]);
+					/* Needed for a FunnyPlaying Midnight Trace cartridge, especially if using
+					 * `LK_ASYNC`. May work without it depending on some devices: the overhead
+					 * of the while loop counter and function call if often enough.
+					 */
+					_delay_100ns();
 				}
 
 				if (mode == LK_MODE_DMG) {
