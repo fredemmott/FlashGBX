@@ -437,7 +437,8 @@ extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
     uint8_t value;
     cq.flush(&value, 1);
 
-    return value;
+    static constexpr auto cmp = std::to_underlying(StateBits::CartPresent);
+    return (value & cmp) == cmp;
 }
 
 extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
