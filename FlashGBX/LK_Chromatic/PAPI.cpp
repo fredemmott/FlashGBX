@@ -6,6 +6,7 @@ extern "C" {
 #include "MC_impl_common.hpp"
 #include "PAPI.hpp"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <thread>
@@ -196,6 +197,10 @@ extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t produc
         return;
     }
     dprint("LK_Chromatic: Initial ping OK");
+
+    std::ranges::fill(_lk_var8, 0);
+    std::ranges::fill(_lk_var16, 0);
+    std::ranges::fill(_lk_var32, 0);
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
