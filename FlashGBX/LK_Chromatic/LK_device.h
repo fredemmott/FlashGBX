@@ -152,14 +152,14 @@ void LK2MC_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe);
 
 #define PULLUPS_OFF()						{}
 
-void lk_recv_from_host(uint8_t* data, uint16_t count);
-void lk_send_to_host(const uint8_t* data, uint16_t count);
-inline void lk_send_byte_to_host(const uint8_t data) {
-    lk_send_to_host(&data, 1);
+void LK2MC_lk_recv_from_host(uint8_t* data, uint16_t count);
+void LK2MC_lk_send_to_host(const uint8_t* data, uint16_t count);
+inline void LK2MC_lk_send_byte_to_host(const uint8_t data) {
+    LK2MC_lk_send_to_host(&data, 1);
 }
-#define CONN_RECV(data, count)				lk_recv_from_host(data, count)
-#define CONN_SEND_BYTE(data)				lk_send_byte_to_host(data)
-#define CONN_SEND(data, count)				lk_send_to_host(data, count)
+#define CONN_RECV(data, count)				LK2MC_lk_recv_from_host(data, count)
+#define CONN_SEND_BYTE(data)				LK2MC_lk_send_byte_to_host(data)
+#define CONN_SEND(data, count)				LK2MC_lk_send_to_host(data, count)
 #define BOOTLOADER_RESET()					{}
 
 #define DISABLE_INTERRUPTS()				{}

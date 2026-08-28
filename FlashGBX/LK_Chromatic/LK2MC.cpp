@@ -468,3 +468,13 @@ extern "C" void mc_begin_async_batch() {
 extern "C" void mc_end_async_batch() {
     CommandQueue::get().end_batch();
 }
+
+extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {
+    CommandQueue::get().flush(nullptr, 0);
+    lk_recv_from_host(data, count);
+}
+
+extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t count) {
+    CommandQueue::get().flush(nullptr, 0);
+    lk_send_to_host(data, count);
+}

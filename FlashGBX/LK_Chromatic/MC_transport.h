@@ -18,6 +18,7 @@
 void lk_recv_from_host(uint8_t* data, uint16_t count);
 void lk_send_to_host(const uint8_t* data, uint16_t count);
 
+/* tx all, then rx all */
 void mc_exec_batch(
   const uint8_t* txData,
   size_t txCount,
