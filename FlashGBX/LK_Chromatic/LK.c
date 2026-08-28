@@ -1914,13 +1914,15 @@ void lk_dmg_agb_flash_unbuffered(void) {
 			}
 #if LK_ASYNC
 			LK_ASYNC_FLUSH(verify_data_buffer, written);
-			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
-				if (data_buffer[x] == 0xFF) continue;
-				if (data_buffer[x] != verify_data_buffer[x]) {
-					dprint("LK_ASYNC_VERIFY_DATA(addr=%x, comp=%x): Timed out with %x!\r\n", base_address + x, data_buffer[x], verify_data_buffer[x]);
-					_lk_var16[LK_VAR16_STATUS_REGISTER] = verify_data_buffer[x];
+			u16 verify_i = 0;
+			for (u16 data_i = 0; data_i < _lk_var16[LK_VAR16_TRANSFER_SIZE]; data_i++) {
+				if (data_buffer[data_i] == 0xFF) continue;
+				if (data_buffer[data_i] != verify_data_buffer[verify_i]) {
+					dprint("LK_ASYNC_VERIFY_DATA(addr=%x, comp=%x): Timed out with %x!\r\n", base_address + data_i, data_buffer[data_i], verify_data_buffer[verify_i]);
+					_lk_var16[LK_VAR16_STATUS_REGISTER] = verify_data_buffer[data_i];
 					break;
 				}
+				verify_i++;
 			}
 #endif
 		} else { // AGB
