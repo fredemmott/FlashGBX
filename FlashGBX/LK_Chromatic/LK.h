@@ -1,17 +1,16 @@
 /*
 	LK Firmware version L15
 	Author: Lesserkuma (github.com/Lesserkuma)
-	Last Modified: 2026-05-23T17:51:58+02:00
+	Last Modified: 2026-08-28T21:32:50+02:00
 */
 
 #ifndef _LK_H_
 #define _LK_H_
 
-#define __BUILD_TIMESTAMP__	1780508702
+#define __BUILD_TIMESTAMP__	1787946056
 //#define DEBUG_VERSION
 
 #include <stdint.h>
-#include <stdlib.h>
 
 // Device specifics
 #ifdef LK_DEVICE_HEADER
