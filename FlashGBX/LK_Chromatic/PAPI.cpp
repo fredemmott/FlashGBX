@@ -11,13 +11,6 @@ extern "C" {
 #include <format>
 #include <thread>
 
-#ifdef _WIN32
-TRACELOGGING_DEFINE_PROVIDER(
-    gTL,
-    "LK-MC",
-    (0x72b32b32, 0x28c9, 0x4298, 0xa4, 0x84, 0xc3, 0x85, 0xdd, 0xda, 0xa2, 0x1f));
-#endif
-
 namespace {
 
 PAPIStringCallback PAPI_OnError = nullptr;
@@ -239,22 +232,3 @@ extern "C" void lk_send_to_host(const uint8_t* data, const uint16_t count) {
 extern "C" void lk_recv_from_host(uint8_t* data, const uint16_t count) {
     fromFlashGBX.read(data, count);
 }
-
-#ifdef _WIN32
-BOOL WINAPI DllMain(HINSTANCE, const DWORD fdwReason, LPVOID lpvReserved) {
-  switch (fdwReason) {
-  case DLL_PROCESS_ATTACH:
-    TraceLoggingRegister(gTL);
-    break;
-  case DLL_PROCESS_DETACH:
-    if (lpvReserved != nullptr) {
-      // No cleanup on process exit
-      break;
-    }
-    TraceLoggingUnregister(gTL);
-    break;
-  default: break;
-  }
-  return TRUE;
-}
-#endif
