@@ -265,7 +265,7 @@ class GbxDevice(LK_Device):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        return f"L{self.FW['fw_ver']} MC v{self.FW["fw_ver/ChromaticDumper"]} (ModRetro v{self.FW['fw_ver/Upstream']})"
+        return f"L{self.FW['fw_ver']} / MC v{self.FW["fw_ver/ChromaticDumper"]} / ModRetro v{self.FW['fw_ver/Upstream']}"
 
     def GetFullNameExtended(self, more=False):
         return f"{self.GetFullName()} - {self.GetFirmwareVersion()}"
