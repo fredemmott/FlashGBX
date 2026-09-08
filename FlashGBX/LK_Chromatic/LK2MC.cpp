@@ -268,8 +268,7 @@ void PushNOPs(const T count) {
         return;
     }
 
-    const auto nopCount = HundredsOfNSToNOPCount(count);
-    CommandQueue::get().pushBytes(nopCount * BytesPerCommand, [] (auto* p, const auto byteCount){
+    CommandQueue::get().pushBytes(count * BytesPerCommand, [] (auto* p, const auto byteCount){
         // Argument is ignored, so we might as well fill it with NOPs as well :)
         std::memset(p, std::to_underlying(Command::NOP), byteCount);
     });
