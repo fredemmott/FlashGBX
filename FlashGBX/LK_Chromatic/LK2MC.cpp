@@ -275,6 +275,12 @@ void PushNOPs(const T count) {
     });
 }
 
+// Marker for delays that are only needed on cartridges that are using
+// resistors instead of level shifters for RD, WR, AUDIO, etc
+constexpr bool DelaySetPinForResistors() {
+    return true;
+}
+
 } // namespace
 
 extern "C" uint8_t LK2MC_ping(const uint8_t cookie) {
@@ -478,6 +484,16 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     default:
         LogError("LK2MC_SET_PIN called with invalid pin {}", pin);
         abort();
+    }
+
+    if constexpr (DelaySetPinForResistors()) {
+        // Required for writing to FunnyPlaying cartridges; tested with
+        // - MidnightTrace MBC3
+        // - EverSave MBC5
+        CommandQueue::get().append({
+            {Command::NOP, 0},
+            {Command::NOP, 0},
+        });
     }
 }
 
