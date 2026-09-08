@@ -193,6 +193,21 @@ struct CommandQueue {
         }
     }
 
+    struct Instruction {
+        Command cmd;
+        uint8_t arg8;
+    };
+    static_assert(sizeof(Instruction) == BytesPerCommand);
+
+    template<std::size_t N>
+    void append(const Instruction (&instructions)[N]) {
+        static_assert(sizeof(instructions) == N * BytesPerCommand);
+        pushBytes(N * BytesPerCommand, [src = &instructions](uint8_t* const p, std::size_t) {
+            std::memcpy(p, src, N * BytesPerCommand);
+        });
+    }
+
+
     void flush(uint8_t* rxData, uint16_t rxCount);
 
     static CommandQueue& get() {
@@ -482,8 +497,10 @@ extern "C" void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
 
 extern "C" void LK2MC_DMG_ADDR_SET(const uint16_t address) {
     auto& cq = CommandQueue::get();
-    cq.push(Command::SetAddressMSB, address >> 8);
-    cq.push(Command::SetAddressLSB, address & 0xff);
+    cq.append({
+        {Command::SetAddressMSB, static_cast<uint8_t>(address >> 8)},
+        {Command::SetAddressLSB, static_cast<uint8_t>(address & 0xff)},
+    });
 }
 
 extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
