@@ -367,7 +367,12 @@ extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
 
 void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
     const auto txCount = _buffer.size();
+
+    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+    SPAMMY(TraceLoggingWriteStart(tla, "CommandQueue::flush()", TraceLoggingValue(txCount, "txCount"), TraceLoggingValue(rxCount, "rxCount")));
+
     if ((txCount == 0) && (rxCount == 0)) {
+        SPAMMY(TraceLoggingWriteStop(tla, "CommandQueue::flush()", TraceLoggingValue("noop", "result")));
         return;
     }
 
@@ -384,6 +389,8 @@ void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
     mc_exec_batch(_buffer.data(), txCount, rxData, rxCount);
 
     _buffer.clear();
+
+    SPAMMY(TraceLoggingWriteStop(tla, "CommandQueue::flush()", TraceLoggingValue("OK", "result")));
 }
 
 extern "C" uint32_t LK2MC_TIMESTAMP_NOW() {
