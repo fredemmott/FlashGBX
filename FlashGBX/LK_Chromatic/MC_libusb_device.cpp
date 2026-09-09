@@ -279,7 +279,7 @@ extern "C" void mc_exec_batch(
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
     SPAMMY(TraceLoggingWriteStart(
         tla,
-        "mc_flush()",
+        "mc_exec_batch()",
         TraceLoggingValue(txCount, "txCount"),
         TraceLoggingValue(rxSize, "rxSize"),
         TraceLoggingValue(txCount / 2, "commandCount")
@@ -323,18 +323,18 @@ extern "C" void mc_exec_batch(
 
     if (!bytesRead.has_value()) [[unlikely]] {
         error = true;
-        LogError("mc_flush()/rx-error: libusb status: {}", std::to_underlying(bytesRead.error()));
+        LogError("mc_exec_batch()/rx-error: libusb status: {}", std::to_underlying(bytesRead.error()));
     } else if (bytesRead.value() != rxSize) {
         error = true;
-        LogError("mc_flush()/rx-count: expected {} actual {}", rxSize, bytesRead.value());
+        LogError("mc_exec_batch()/rx-count: expected {} actual {}", rxSize, bytesRead.value());
     }
 
     if (!bytesWritten.has_value()) [[unlikely]] {
         error = true;
-        LogError("mc_flush()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
+        LogError("mc_exec_batch()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
     } else if (bytesWritten.value() != txCount) [[unlikely]] {
         error = true;
-        LogError("mc_flush()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
+        LogError("mc_exec_batch()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
     }
 
     if (error) [[unlikely]] {
@@ -345,7 +345,7 @@ extern "C" void mc_exec_batch(
     QueryPerformanceCounter(&qpEnd);
     const auto elapsed = SecondsBetween(qpBegin, qpEnd);
 
-    TraceLoggingWriteStop(tla, "mc_flush()",
+    TraceLoggingWriteStop(tla, "mc_exec_batch()",
         TraceLoggingValue(static_cast<double>(txCount) / elapsed, "usb-tx-EBps"),
         TraceLoggingValue(static_cast<double>(rxSize) / elapsed, "usb-rx-EBps"),
         TraceLoggingValue(static_cast<double>(rxSize + txCount) / elapsed, "usb-trx-EBps"));
