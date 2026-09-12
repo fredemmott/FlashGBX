@@ -26,7 +26,7 @@
 #define LK_CART_PRESENCE_SWITCH_SUPPORT			true
 #define LK_CART_MODE_SWITCH_SUPPORT			false
 
-#define LK_ASYNC					true
+#define LK_ASYNC					1
 #if (!LK_ASYNC)
 #define LK_ASYNC_FLUSH(DATA, LEN) {}
 #endif
