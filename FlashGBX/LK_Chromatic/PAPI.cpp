@@ -3,6 +3,7 @@ extern "C" {
 #include "LK.h"
 }
 
+#include "ContiguousRingBuffer.hpp"
 #include "MC_impl_common.hpp"
 #include "PAPI.hpp"
 
@@ -16,6 +17,7 @@ namespace {
 PAPIStringCallback PAPI_OnError = nullptr;
 
 template<std::size_t N>
+requires (std::has_single_bit(N)) // must be power of two
 struct ContiguousSPSCStream {
     ContiguousSPSCStream(const ContiguousSPSCStream&) = delete;
     ContiguousSPSCStream(ContiguousSPSCStream&&) = delete;
@@ -31,7 +33,8 @@ struct ContiguousSPSCStream {
         SPAMMY(TraceLoggingWriteStart(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
         const auto offset = _writePos.load(std::memory_order_relaxed);
-        std::invoke(std::forward<Fn>(f),_buffer.data() + offset, count);
+        auto span = _buffer.subspan(offset, count);
+        std::invoke(std::forward<Fn>(f), span.data(), count);
         _writePos.store(offset + count, std::memory_order_release);
         _writePos.notify_one();
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
@@ -76,7 +79,7 @@ struct ContiguousSPSCStream {
             }
         }
 
-        std::memcpy(dest, _buffer.data() + offset, count);
+        std::memcpy(dest, _buffer.subspan(offset, count).data(), count);
         const auto next = offset + count;
         if (next == _writePos) {
             _readPos.store(0, std::memory_order_relaxed);
@@ -95,20 +98,13 @@ struct ContiguousSPSCStream {
         return _writePos.load(std::memory_order_acquire) - _readPos.load(std::memory_order_acquire);
     }
 
-    // MUST only be called by reader/consumer thread
-    void reset_consumer_buffer() {
-        const auto p = _writePos.load(std::memory_order_acquire);
-        _readPos.store(p, std::memory_order_relaxed);
+    void clear() {
+        const auto currentWrite = _writePos.load(std::memory_order_acquire);
+        _readPos.store(currentWrite, std::memory_order_release);
     }
 
-    // MUST only be called by writer/producer thread
-    void reset_producer_buffer() {
-        _writePos.store(0, std::memory_order_relaxed);
-        _readPos.store(0, std::memory_order_release);
-        _writePos.notify_all();
-    }
 private:
-    std::array<uint8_t, N> _buffer {};
+    ContiguousRingBuffer _buffer { N };
 
     std::atomic<std::size_t> _readPos {};
     std::atomic<std::size_t> _writePos {};
@@ -116,8 +112,8 @@ private:
     const char* const _label;
 };
 
-ContiguousSPSCStream<65536> gPAPI_to_LK("from-FlashGBX");
-ContiguousSPSCStream<65536> gLK_to_PAPI("to-FlashGBX");;
+ContiguousSPSCStream<8192> gPAPI_to_LK("PAPI-to-LK");
+ContiguousSPSCStream<8192> gLK_to_PAPI("LK-to-PAPI");;
 
 [[nodiscard]]
 uint8_t GetPingCookie() {
@@ -238,7 +234,7 @@ extern "C" void mc_on_error(const char* const str, const std::size_t length) {
 }
 
 extern "C" void papi_send_to_lk_reset_output_buffer() {
-    gPAPI_to_LK.reset_producer_buffer();
+    gPAPI_to_LK.clear();
 }
 
 extern "C" void papi_send_to_lk_flush() {
@@ -252,7 +248,7 @@ extern "C" uint16_t papi_recv_from_lk_pending_count() {
 }
 
 extern "C" void papi_recv_from_lk_reset_input_buffer() {
-    gLK_to_PAPI.reset_consumer_buffer();
+    gLK_to_PAPI.clear();
 }
 
 ///// implement LK host IO functions using the PAPI buffers //////

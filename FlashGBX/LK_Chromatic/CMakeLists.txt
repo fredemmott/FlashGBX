@@ -16,6 +16,11 @@ add_library(
   LK.h
   LK_device.h
 
+  ContiguousRingBuffer.hpp
+
+  ContiguousRingBuffer_win32.cpp
+  ContiguousRingBuffer_win32.hpp
+
   MC_impl_common.hpp
   MC_transport.h
 
@@ -58,6 +63,15 @@ if (WIN32)
       PRIVATE
       WIN32_LEAN_AND_MEAN
       NOMINMAX
+    )
+
+    target_link_libraries(
+      _LK_Chromatic
+      PRIVATE
+      # Needed for ContiguousRingBuffer_win32:
+      # - VirtualAlloc2
+      # - MapViewOfFile3
+      "onecore.lib"
     )
 endif()
 
