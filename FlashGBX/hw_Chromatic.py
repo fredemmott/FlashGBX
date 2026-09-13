@@ -7,6 +7,8 @@ from pathlib import Path
 import sysconfig
 import ctypes
 
+from . import pyside
+
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
 from .LK_Chromatic import Device as MicrocodeDevice
@@ -21,6 +23,7 @@ NATIVE_DATA_CALLBACK = ctypes.CFUNCTYPE(
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
+    ID_PREFIX = b"fredemmott/FlashGBX\x00"
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
@@ -50,6 +53,9 @@ class GbxDevice(LK_Device):
         self._load_ffi()
 
     def _load_ffi(self):
+        self._lk.papi_fpga_program_sram.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+        self._lk.papi_fpga_program_sram.restype = None
+
         self._lk.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
         self._lk.papi_open.restype = None
 
@@ -143,11 +149,18 @@ class GbxDevice(LK_Device):
     def LoadFirmwareVersion(self):
         dprint("Querying firmware version")
         if self.DEVICE is None: return False
-        if not hasattr(self.DEVICE, "_chromatic_fw_version"):
-            self.DEVICE._chromatic_fw_version = self._query_firmware_version()
-        return self.DEVICE._chromatic_fw_version
+        if not hasattr(self.DEVICE, "_haveFredEmmottMicrocode"):
+            match = self._query_firmware_version()
+            if not match:
+                self._program_sram()
+                match = self._query_firmware_version()
+            if not match:
+                dprint("Failed to write firmware to SRAM")
+                self.FW = None
+            self.DEVICE._haveFredEmmottMicrocode = match
+        return self.DEVICE._haveFredEmmottMicrocode
 
-    def _query_firmware_version(self):
+    def _query_firmware_version(self) -> bool:
         try:
             self.DEVICE.timeout = 0.075
             self.DEVICE.reset_input_buffer()
@@ -157,29 +170,17 @@ class GbxDevice(LK_Device):
             time.sleep(0.01)
             device_id = self.DEVICE.read(self.DEVICE.in_waiting)
 
+            if not device_id.startswith(self.ID_PREFIX):
+                return False
+
             self._write(bytearray(b'\x55\xAA'))
             time.sleep(0.01)
             device_id_dup = self.DEVICE.read(self.DEVICE.in_waiting)
             if device_id_dup != device_id:
                 raise Exception("Device ID mismatch")
 
-            if b"FW L" in device_id:
-                dprint("Running dedicated firmware; no longer supported")
-
-            if device_id[0:5] == b"Micro":
-                dprint("Running custom microcode firmware; was never supported")
-                self.FW = None
-                return False
-
-            if not device_id.startswith(b"fredemmott/FlashGBX\x00"):
-                dprint("Not running fredemmott/FlashGBX firmware")
-                self.FW = None
-                return False
-
-
             if len(device_id) != 28:
                 dprint("Running supported firmware, but not a supported version")
-                self.FW = None
                 return False
 
             # BCD
@@ -202,7 +203,6 @@ class GbxDevice(LK_Device):
 
             if self.FW["fw_ver/ChromaticDumper"] != "2026.08.27.0":
                 dprint("Running microcode firmware, but not a supported version")
-                self.FW = None
                 return False
 
 
@@ -229,6 +229,57 @@ class GbxDevice(LK_Device):
             except:
                 pass
             return False
+
+    def _program_sram(self) -> bool:
+        app = None
+        orig_progress = None
+
+        def progress(s: str) -> None: pass
+
+        try:
+            app = pyside.QtGui.QGuiApplication.instance()
+            if not app is None:
+                for window in pyside.QtGui.QGuiApplication.topLevelWindows():
+                    widget = pyside.QtWidgets.QWidget.find(window.winId())
+                    if hasattr(widget, "lblDevice"):
+                        def gui_progress(app, label, s:str) -> None:
+                            label.setText(s)
+                            app.processEvents()
+                        progress = lambda s, a = app, l = widget.lblDevice: gui_progress(a, l, s)
+                        orig_progress = widget.lblDevice.text()
+                        break
+        except:
+            pass
+        try:
+            progress("Found Chromatic with incompatible firmware, writing FlashGBX support to FPGA SRAM...")
+            self.DEVICE.close()
+
+            path = b"D:/chromatic_fpga/esp32t/impl/pnr/evt1_x2.fs" # TODO: use from system
+            self._lk.papi_fpga_program_sram(path, len(path))
+
+
+            begin = time.monotonic()
+            while time.monotonic() - begin < 10:
+                time.sleep(0.1)
+                try:
+                    self.DEVICE.open()
+                    self._write(bytearray(b'\x55\xAA'))
+                    time.sleep(0.01)
+                    device_id = self.DEVICE.read(self.DEVICE.in_waiting)
+                    if device_id.startswith(self.ID_PREFIX):
+                        elapsed = time.monotonic() - begin
+                        dprint(f"Programmed Chromatic SRAM in {elapsed} seconds")
+                        return True
+                    self.DEVICE.close()
+                    if app:
+                        app.processEvents()
+                except SerialException:
+                    continue
+        except Exception as e:
+            return False
+        finally:
+            if orig_progress:
+                progress(orig_progress)
 
     def _query_lk_firmware_version(self):
         self._write(self.DEVICE_CMD["QUERY_FW_INFO"])

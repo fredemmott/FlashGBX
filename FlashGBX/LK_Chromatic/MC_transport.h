@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 #include <cinttypes>
+
 #include <cstddef>
 #else
 #include <inttypes.h>

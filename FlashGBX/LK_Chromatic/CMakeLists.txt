@@ -7,6 +7,8 @@ FetchContent_Declare(libusb_cmake
 )
 FetchContent_MakeAvailable(libusb_cmake)
 
+add_subdirectory(openFPGAloader)
+
 add_library(
   _LK_Chromatic
   MODULE
@@ -21,6 +23,9 @@ add_library(
 
   PAPI.hpp
   PAPI.cpp
+
+  PAPI_fpga.cpp
+  PAPI_fpga.hpp
 
   MC_libusb_device.cpp
 )
@@ -39,6 +44,7 @@ set_target_properties(
 target_link_libraries(
   _LK_Chromatic
   PRIVATE
+  openFPGAloader
   usb-1.0 # In future versions, this will be libusb::usb-1.0
 )
 

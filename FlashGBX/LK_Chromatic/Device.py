@@ -6,6 +6,9 @@ import ctypes
 
 from enum import Enum
 
+from FlashGBX.Logging import dprint
+
+
 # For debug logging
 class Command(int, Enum):
     CMD_PING = 0
@@ -33,9 +36,11 @@ class Device(serial.Serial):
     _read_to_flashgbx: Callable[[ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint16], None]
 
     def flush(self):
+        dprint("chromatic flush")
         pass
 
     def lk_on_error(self, data: bytes) -> None:
+        dprint("lk_on_error")
         pass
 
     def init_chromatic(self, read_from_flashgbx, write_from_flashgbx):
@@ -43,6 +48,7 @@ class Device(serial.Serial):
         self._write_from_flashgbx = write_from_flashgbx
 
     def close(self):
+        dprint("Chromatic close")
         super().close()
 
     def read(self, size = 1) -> bytearray:
@@ -63,10 +69,13 @@ class Device(serial.Serial):
 
     @property
     def in_waiting(self):
+        dprint("in-waiting")
         return 0
 
     def reset_input_buffer(self):
+        dprint("reset input")
         pass
 
     def reset_output_buffer(self):
+        dprint("reset output")
         pass
