@@ -254,6 +254,7 @@ std::optional<LibUSBDevice>& device() {
     return ret;
 }
 
+#ifdef _WIN32
 [[nodiscard]]
 double SecondsBetween(const LARGE_INTEGER& qpBegin, const LARGE_INTEGER& qpEnd) {
     static const auto multiplier = [] {
@@ -263,6 +264,7 @@ double SecondsBetween(const LARGE_INTEGER& qpBegin, const LARGE_INTEGER& qpEnd) 
     }();
     return static_cast<double>(qpEnd.QuadPart - qpBegin.QuadPart) * multiplier;
 }
+#endif
 
 }
 

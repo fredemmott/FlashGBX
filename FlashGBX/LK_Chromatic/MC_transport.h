@@ -5,14 +5,8 @@
 #ifndef FLASHGBX_NATIVE_MC_IO_H
 #define FLASHGBX_NATIVE_MC_IO_H
 
-#ifdef __cplusplus
-#include <cinttypes>
-
-#include <cstddef>
-#else
 #include <inttypes.h>
 #include <stddef.h>
-#endif
 
 /***** MUST BE IMPLEMENTED BY TRANSPORT *****/
 
@@ -28,8 +22,8 @@ void mc_exec_batch(
 
 /* message will have a null terminator, but length *does not* include the
  * null terminator */
-void mc_on_error(const char* message, std::size_t length);
-void mc_on_debug_message(const char* message, std::size_t length);
+void mc_on_error(const char* message, size_t length);
+void mc_on_debug_message(const char* message, size_t length);
 
 /***** MUST BE CALLED BY TRANSPORT *****/
 

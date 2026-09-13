@@ -4,7 +4,11 @@
 
 #include <cstdint>
 
+#ifdef _WIN32
 #define LK_CHROMATIC_EXPORT __declspec(dllexport)
+#else
+#define LK_CHROMATIC_EXPORT
+#endif
 
 extern "C" {
 

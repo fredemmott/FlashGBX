@@ -8,9 +8,10 @@ extern "C" {
 #include "PAPI.hpp"
 
 #include <algorithm>
-#include <array>
+#include <bit>
 #include <format>
 #include <thread>
+#include <stop_token>
 
 namespace {
 
@@ -73,7 +74,11 @@ struct ContiguousSPSCStream {
                     break;
                 }
 
+#ifdef _WIN32
                 _mm_pause();
+#else
+                std::this_thread::yield();
+#endif
 
                 //_writePos.wait(writeOff, std::memory_order_release);
             }
@@ -115,15 +120,25 @@ private:
 ContiguousSPSCStream<8192> gPAPI_to_LK("PAPI-to-LK");
 ContiguousSPSCStream<8192> gLK_to_PAPI("LK-to-PAPI");;
 
+#ifdef _WIN32
 [[nodiscard]]
 uint8_t GetPingCookie() {
-    LARGE_INTEGER ret;
-    QueryPerformanceCounter(&ret);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
 
     // Fibonacci Hashing (TAOCP vol 3)
     // Magic number approach to 1/golden ratio from RC5
-    return (ret.QuadPart * 0x9E3779B97F4A7C15ULL) >> 56;
+    return (now.QuadPart * 0x9E3779B97F4A7C15ULL) >> 56;
 }
+#else
+[[nodiscard]]
+uint8_t GetPingCookie() {
+    timespec now {};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    const auto val = (static_cast<uint64_t>(now.tv_sec) * 1'000'000'000) + now.tv_nsec;
+    return (val * 0x9E3779B97F4A7C15ULL) >> 56;
+}
+#endif
 
 }
 
@@ -218,14 +233,18 @@ extern "C" void mc_on_debug_message(const char* const str, const std::size_t len
     TraceLoggingWrite(gTL, "dprint", TraceLoggingCountedString(str, length, "message"));
 
     const auto ds = std::format("{}\n", std::string_view { str, length });
+#ifdef _WIN32
     OutputDebugStringA(ds.c_str());
+#endif
 }
 
 extern "C" void mc_on_error(const char* const str, const std::size_t length) {
     TraceLoggingWrite(gTL, "ERROR", TraceLoggingCountedString(str, length, "message"));
 
     const auto ds = std::format("ERROR: {}\n", std::string_view { str, length });
+#ifdef _WIN32
     OutputDebugStringA(ds.c_str());
+#endif
 
     if (PAPI_OnError) {
         const auto fgbx = std::format("LK-MC: {}\r\n", std::string_view { str, length });

@@ -17,9 +17,7 @@ add_library(
   LK_device.h
 
   ContiguousRingBuffer.hpp
-
-  ContiguousRingBuffer_win32.cpp
-  ContiguousRingBuffer_win32.hpp
+  ContiguousRingBufferBase.hpp
 
   MC_impl_common.hpp
   MC_transport.h
@@ -56,7 +54,13 @@ target_link_libraries(
 install(TARGETS _LK_Chromatic DESTINATION FlashGBX)
 
 if (WIN32)
-    target_sources(_LK_Chromatic PRIVATE win32.cpp)
+    target_sources(
+      _LK_Chromatic
+      PRIVATE
+      win32.cpp
+      ContiguousRingBuffer_win32.cpp
+      ContiguousRingBuffer_win32.hpp
+    )
 
     target_compile_definitions(
       _LK_Chromatic
@@ -79,4 +83,14 @@ if (MSVC)
     # Enable conformant mode for the C preprocessor
     target_compile_options(_LK_Chromatic PRIVATE "/Zc:preprocessor")
     install(FILES "$<TARGET_PDB_FILE:_LK_Chromatic>" DESTINATION FlashGBX)
+endif()
+
+
+if (APPLE)
+    target_sources(
+      _LK_Chromatic
+      PRIVATE
+      ContiguousRingBuffer_mach.cpp
+      ContiguousRingBuffer_mach.hpp
+    )
 endif()

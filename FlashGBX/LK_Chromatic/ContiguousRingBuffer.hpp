@@ -7,9 +7,10 @@
 
 #ifdef _WIN32
 #include "ContiguousRingBuffer_win32.hpp"
+#elif __APPLE__
+#include "ContiguousRingBuffer_mach.hpp"
 #else
 #error "ContiguousRingBuffer is not implemented on this platform"
 // TODO:
-// - macOS: vm_allocate, vm_deallocate, vm_remap
 // - linux: mmap, munmap, memfd
 #endif

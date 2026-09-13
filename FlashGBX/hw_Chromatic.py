@@ -52,9 +52,8 @@ class GbxDevice(LK_Device):
             case "win32":
                 os.add_dll_directory(os.path.dirname(native_dir))
                 ext = ".dll"
-            case "darwin":
-                ext = ".dylib"
             case _:
+                # even on Darwin (macOS), we get a .so, not a .dylib
                 ext = ".so"
         lk_path =  native_dir / f"_LK_Chromatic{ext}"
         self._papi = ctypes.CDLL(str(lk_path))

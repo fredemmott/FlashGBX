@@ -60,7 +60,7 @@ uint8_t LK2MC_verify_status_register_flush(uint8_t* buffer, uint32_t count);
 #define LK_ASYNC_PENDING_VERIFY_STATUS_REGISTER_COUNT() LK2MC_get_pending_verify_status_register_count()
 
 #ifndef LK_DEVICE_NO_DPRINT
-inline void dprint(const char* const fmt, ...) {
+extern inline void dprint(const char* const fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	LK2MC_dprint(fmt, args);
@@ -148,7 +148,7 @@ void LK2MC_OUTPUT_ENABLE(uint8_t tristate_pin, uint8_t oe);
 
 void LK2MC_lk_recv_from_host(uint8_t* data, uint16_t count);
 void LK2MC_lk_send_to_host(const uint8_t* data, uint16_t count);
-inline void LK2MC_lk_send_byte_to_host(const uint8_t data) {
+extern inline void LK2MC_lk_send_byte_to_host(const uint8_t data) {
     LK2MC_lk_send_to_host(&data, 1);
 }
 #define CONN_RECV(data, count)				LK2MC_lk_recv_from_host(data, count)

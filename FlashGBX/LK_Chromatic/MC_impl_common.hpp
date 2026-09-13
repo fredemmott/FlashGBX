@@ -12,10 +12,25 @@ extern "C" {
 #include <TraceLoggingProvider.h>
 #include <TraceLoggingActivity.h>
 
+TRACELOGGING_DECLARE_PROVIDER(gTL);
+#else
+constexpr std::size_t gTL = 0;
+template<std::size_t>
+struct TraceLoggingThreadActivity {};
+#define TraceLoggingWrite(...) {}
+#define TraceLoggingWriteStart(...) {}
+#define TraceLoggingWriteStop(...) {}
+#endif
+
+#ifdef _WIN32
 #define SET_THREAD_NAME(x) {std::ignore = SetThreadDescription(GetCurrentThread(), L##x);}
 #define UNSET_THREAD_NAME() {std::ignore = SetThreadDescription(GetCurrentThread(), L"");}
-
-TRACELOGGING_DECLARE_PROVIDER(gTL);
+#elifdef __APPLE__
+#define SET_THREAD_NAME(x) pthread_setname_np(x)
+#define UNSET_THREAD_NAME() pthread_setname_np("")
+#else
+#define SET_THREAD_NAME(x) pthread_setname_np(pthread_self(), x)
+#define UNSET_THREAD_NAME() pthread_setname_np(pthread_self(), "")
 #endif
 
 // Anything other than 0 noticeably impacts performance, even if TraceLogging is disabled
