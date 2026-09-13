@@ -1114,7 +1114,6 @@ void lk_dmg_cart_write_byte(u32 address, u16 value) {
 		PIN_CLK_H();
 		PIN_WR_H();
 		PIN_CS_H();
-		LK_ASYNC_DELAY(100ns);
 		RAW_DMG_DATA_SET(0);
 		RAW_DMG_DATA_DIR_IN();
 	} else {
@@ -1131,7 +1130,6 @@ void lk_dmg_cart_write_byte(u32 address, u16 value) {
 		_delay_500ns();
 		PIN_CLK_H();
 		PIN_WR_H();
-		LK_ASYNC_DELAY(100ns);
 		RAW_DMG_DATA_SET(0);
 		RAW_DMG_DATA_DIR_IN();
 	}
@@ -1318,11 +1316,6 @@ void lk_dmg_flash_write_byte(u32 address, u16 value) {
 		PIN_WR_H();
 		PIN_CS2_H();
 	}
-#if LK_ASYNC
-	// in case of back-to-back writes, we need to hold WR high for a little
-	// longer to be compatible with FunnyPlaying EverSave/MidnightTrace cartridges
-	_delay_100ns();
-#endif
 }
 
 void lk_dmg_flash_enable_audio(u8 enable) {
@@ -2040,7 +2033,6 @@ void lk_dmg_agb_flash_buffered(u8 this_iteration, u8 num_of_iterations, u16 tran
 					PIN_WR_H();
 					PIN_CS2_H();
 				}
-				LK_ASYNC_DELAY(200ns); // Hold WR high for a little bit between bytes
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
 		} else { // AGB

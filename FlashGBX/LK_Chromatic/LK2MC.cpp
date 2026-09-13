@@ -105,6 +105,10 @@ struct CommandBuffer {
         _end += count;
     }
 
+    void pop() {
+        _end -= BytesPerCommand;
+    }
+
     void clear() {
         _end = _begin;
     }
@@ -112,7 +116,7 @@ struct CommandBuffer {
     [[nodiscard]]
     uint8_t* data() { return _begin; }
     [[nodiscard]]
-    std::size_t size() const { return _end - _begin; }
+    std::size_t byte_count() const { return _end - _begin; }
 
     [[nodiscard]]
     uint8_t* begin() const noexcept { return _begin; }
@@ -127,7 +131,7 @@ private:
     std::size_t _capacity {};
 
     void ensureCanAppend(const std::size_t required) {
-        if (const auto s = size(); s + required > _capacity) {
+        if (const auto s = byte_count(); s + required > _capacity) {
             const auto newCapacity = std::max<std::size_t>(s + required, _capacity * 2);
             _begin = static_cast<uint8_t*>(std::realloc(_begin, newCapacity));
             _capacity = newCapacity;
@@ -143,6 +147,20 @@ struct CommandQueue {
 
     [[nodiscard]] uint8_t* end() const noexcept {
         return _buffer.end();
+    }
+
+    [[nodiscard]]
+    std::tuple<Command, uint8_t> last() const noexcept {
+        if (end() - begin() < BytesPerCommand) [[unlikely]] {
+            LogError("CommandQueue::last() called with less than 2 bytes");
+            abort();
+        }
+        static_assert(BytesPerCommand == 2);
+        return {static_cast<Command>(_buffer.end()[-2]), _buffer.end()[-1]};
+    }
+
+    void pop() {
+        _buffer.pop();
     }
 
     void start_batch() {
@@ -163,7 +181,7 @@ struct CommandQueue {
             abort();
         }
 
-        if (_buffer.size() == 0) {
+        if (_buffer.byte_count() == 0) {
             return;
         }
         flush(nullptr, 0);
@@ -181,7 +199,7 @@ struct CommandQueue {
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
     void pushBytes(const std::size_t count, Fn&& fn) {
-        const auto base = _buffer.size();
+        const auto base = _buffer.byte_count();
         _buffer.pushBytes(count, std::forward<Fn>(fn));
         const auto begin = _buffer.data() + base;
         const auto end = begin + count;
@@ -209,6 +227,8 @@ struct CommandQueue {
 
 
     void flush(uint8_t* rxData, uint16_t rxCount);
+
+    [[nodiscard]] std::size_t byte_count() const { return _buffer.byte_count(); }
 
     static CommandQueue& get() {
         static CommandQueue instance {};
@@ -303,9 +323,7 @@ extern "C" void LK2MC_verify_data(const uint8_t expected) {
     // `lk_dmg_verify_data()`, with the loop body moved to a dedicated microcode command
     PIN_RD_L();
     PIN_CLK_L(); // Pocket Camera needs this
-    _delay_200ns();
     RAW_DMG_DATA_SET(0);
-    _delay_300ns(); // Minimum for ModRetro with 39VF1681
     RAW_DMG_DATA_DIR_IN();
     RAW_DMG_ADDR_DIR_OUT();
     // Address should still be set from the write
@@ -382,7 +400,7 @@ extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
 }
 
 void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
-    const auto txCount = _buffer.size();
+    const auto txCount = _buffer.byte_count();
 
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
     SPAMMY(TraceLoggingWriteStart(tla, "CommandQueue::flush()", TraceLoggingValue(txCount, "txCount"), TraceLoggingValue(rxCount, "rxCount")));
@@ -476,12 +494,43 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
         LogError("LK2MC_SET_PIN called with invalid pin {}", pin);
         abort();
     }
+
+    if (!high) {
+        return;
+    }
+
+    // Insert a delay after each write to hold the pin high for a little bit;
+    // doing flash writes - even ID checks - back to back is too fast for many
+    // cartridges, e.g. FunnyPlaying MidnightTrace/EverSave
+
+    if (
+        const auto we = _lk_var8[LK_VAR8_FLASH_WE_PIN];
+        (we == LK_FLASH_WE_PIN_WR && pin == PIN_WR)
+        || (we == LK_FLASH_WE_PIN_AUDIO && pin == PIN_AUDIO)
+        || (we == LK_FLASH_WE_PIN_WR_RESET && pin == PIN_CS2)
+    ) {
+        _delay_200ns();
+    }
 }
 
 extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe) {
+    auto& cq = CommandQueue::get();
+    const auto data_in_delays =
+        (tristate_pin == TRISTATE_DATA)
+        && (!oe)
+        && (cq.byte_count() >= BytesPerCommand)
+        && (cq.last() == std::tuple {Command::SetData, 0});
+    if (data_in_delays) {
+        cq.pop();
+        _delay_200ns();
+    }
     CommandQueue::get().push(
         Command::SetOutputEnable,
         (1 << (tristate_pin + 4)) | (oe << tristate_pin));
+    if (data_in_delays) {
+        // Minimum for ModRetro with 39VF1681, e.g. Centipede
+        _delay_300ns();
+    }
 }
 
 extern "C" void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
