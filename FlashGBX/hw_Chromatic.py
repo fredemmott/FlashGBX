@@ -165,6 +165,8 @@ class GbxDevice(LK_Device):
             if not match:
                 dprint("Failed to write firmware to SRAM")
                 self.FW = None
+            if self.DEVICE is None:
+                return False
             self.DEVICE._haveFredEmmottMicrocode = match
         return self.DEVICE._haveFredEmmottMicrocode
 
