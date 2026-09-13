@@ -77,11 +77,12 @@ struct ContiguousSPSCStream {
         }
 
         std::memcpy(dest, _buffer.data() + offset, count);
-        _readPos.store(_readPos, std::memory_order_relaxed);
-        _readPos += count;
-        if (_readPos == _writePos) {
+        const auto next = offset + count;
+        if (next == _writePos) {
             _readPos.store(0, std::memory_order_relaxed);
             _writePos.store(0, std::memory_order_release);
+        } else {
+            _readPos.store(next, std::memory_order_relaxed);
         }
 
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
