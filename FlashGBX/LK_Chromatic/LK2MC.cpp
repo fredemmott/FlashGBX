@@ -52,7 +52,7 @@ enum class SetPinsB : uint8_t {
 };
 
 [[nodiscard]]
-bool ProducesRX(const Command cmd) noexcept {
+constexpr bool ProducesRX(const Command cmd) noexcept {
     using enum Command;
 
     switch (cmd) {
