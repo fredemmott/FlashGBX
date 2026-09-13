@@ -94,6 +94,19 @@ struct ContiguousSPSCStream {
     std::size_t pending_count() const {
         return _writePos.load(std::memory_order_acquire) - _readPos.load(std::memory_order_acquire);
     }
+
+    // MUST only be called by reader/consumer thread
+    void reset_consumer_buffer() {
+        const auto p = _writePos.load(std::memory_order_acquire);
+        _readPos.store(p, std::memory_order_relaxed);
+    }
+
+    // MUST only be called by writer/producer thread
+    void reset_producer_buffer() {
+        _writePos.store(0, std::memory_order_relaxed);
+        _readPos.store(0, std::memory_order_release);
+        _writePos.notify_all();
+    }
 private:
     std::array<uint8_t, N> _buffer {};
 
@@ -103,8 +116,8 @@ private:
     const char* const _label;
 };
 
-ContiguousSPSCStream<65536> fromFlashGBX("from-FlashGBX");
-ContiguousSPSCStream<65536> toFlashGBX("to-FlashGBX");;
+ContiguousSPSCStream<65536> gPAPI_to_LK("from-FlashGBX");
+ContiguousSPSCStream<65536> gLK_to_PAPI("to-FlashGBX");;
 
 [[nodiscard]]
 uint8_t GetPingCookie() {
@@ -127,7 +140,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_recv_from_lk(uint8_t* data, const uint1
     SPAMMY(TraceLoggingWriteStart(tla, "papi_recv_from_lk()"));
 
 
-    toFlashGBX.read(data, count);
+    gLK_to_PAPI.read(data, count);
 
     SPAMMY(TraceLoggingWriteStop(tla, "papi_recv_from_lk()"));
 }
@@ -149,7 +162,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
                 while (!stop.stop_requested()) {
                     uint8_t cmd {};
                     {
-                        if (!fromFlashGBX.read(&cmd, 1, stop)) {
+                        if (!gPAPI_to_LK.read(&cmd, 1, stop)) {
                             haveWorker.clear();
                             UNSET_THREAD_NAME();
                             return;
@@ -166,7 +179,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
         }.detach();
     }
 
-    fromFlashGBX.write(count, [src = data](uint8_t* const dst, const std::size_t n) {
+    gPAPI_to_LK.write(count, [src = data](uint8_t* const dst, const std::size_t n) {
         std::memcpy(dst, src, n);
     });
 
@@ -224,12 +237,33 @@ extern "C" void mc_on_error(const char* const str, const std::size_t length) {
     }
 }
 
+extern "C" void papi_send_to_lk_reset_output_buffer() {
+    gPAPI_to_LK.reset_producer_buffer();
+}
+
+extern "C" void papi_send_to_lk_flush() {
+    while (gPAPI_to_LK.pending_count()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+extern "C" uint16_t papi_recv_from_lk_pending_count() {
+    return gLK_to_PAPI.pending_count();
+}
+
+extern "C" void papi_recv_from_lk_reset_input_buffer() {
+    gLK_to_PAPI.reset_consumer_buffer();
+}
+
+///// implement LK host IO functions using the PAPI buffers //////
+
 extern "C" void lk_send_to_host(const uint8_t* data, const uint16_t count) {
-    toFlashGBX.write(count, [src = data](uint8_t* const dest, const std::size_t n) {
+    gLK_to_PAPI.write(count, [src = data](uint8_t* const dest, const std::size_t n) {
         std::memcpy(dest, src, n);
     });
 }
 
+
 extern "C" void lk_recv_from_host(uint8_t* data, const uint16_t count) {
-    fromFlashGBX.read(data, count);
+    gPAPI_to_LK.read(data, count);
 }

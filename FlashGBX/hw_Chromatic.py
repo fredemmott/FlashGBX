@@ -54,35 +54,47 @@ class GbxDevice(LK_Device):
             case _:
                 ext = ".so"
         lk_path =  native_dir / f"_LK_Chromatic{ext}"
-        self._lk = ctypes.CDLL(str(lk_path))
+        self._papi = ctypes.CDLL(str(lk_path))
         self._load_ffi()
 
     def _load_ffi(self):
-        self._lk.papi_fpga_program_sram.argtypes = [ctypes.c_char_p, ctypes.c_size_t, NATIVE_STRING_CALLBACK, NATIVE_PROGRESS_CALLBACK]
-        self._lk.papi_fpga_program_sram.restype = ctypes.c_int
+        self._papi.papi_fpga_program_sram.argtypes = [ctypes.c_char_p, ctypes.c_size_t, NATIVE_STRING_CALLBACK, NATIVE_PROGRESS_CALLBACK]
+        self._papi.papi_fpga_program_sram.restype = ctypes.c_int
 
-        self._lk.papi_fpga_reset.argtypes = []
-        self._lk.papi_fpga_reset.restype = ctypes.c_int
+        self._papi.papi_fpga_reset.argtypes = []
+        self._papi.papi_fpga_reset.restype = ctypes.c_int
 
-        self._lk.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
-        self._lk.papi_open.restype = None
+        self._papi.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
+        self._papi.papi_open.restype = None
 
-        self._lk.papi_close.argtypes = []
-        self._lk.papi_close.restype = None
+        self._papi.papi_close.argtypes = []
+        self._papi.papi_close.restype = None
 
-        self._lk.papi_send_to_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
-        self._lk.papi_send_to_lk.restype = None
+        self._papi.papi_send_to_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+        self._papi.papi_send_to_lk.restype = None
 
-        self._lk.papi_recv_from_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
-        self._lk.papi_recv_from_lk.restype = None
+        self._papi.papi_send_to_lk_reset_output_buffer.argtypes = []
+        self._papi.papi_send_to_lk_reset_output_buffer.restype = None
 
-        self._lk.papi_set_on_error_callback.argtypes = [NATIVE_STRING_CALLBACK]
-        self._lk.papi_set_on_error_callback.restype = None
+        self._papi.papi_send_to_lk_flush.argtypes = []
+        self._papi.papi_send_to_lk_flush.restype = None
+
+        self._papi.papi_recv_from_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+        self._papi.papi_recv_from_lk.restype = None
+
+        self._papi.papi_recv_from_lk_reset_input_buffer.argtypes = []
+        self._papi.papi_recv_from_lk_reset_input_buffer.restype = None
+
+        self._papi.papi_recv_from_lk_pending_count.argtypes = []
+        self._papi.papi_recv_from_lk_pending_count.restype = ctypes.c_uint16
+
+        self._papi.papi_set_on_error_callback.argtypes = [NATIVE_STRING_CALLBACK]
+        self._papi.papi_set_on_error_callback.restype = None
 
         def cb(ptr, count) -> None:
             self._lk_on_error(bytes(ptr[:count]))
         self._lk_on_error_cb = NATIVE_STRING_CALLBACK(cb)
-        self._lk.papi_set_on_error_callback(self._lk_on_error_cb)
+        self._papi.papi_set_on_error_callback(self._lk_on_error_cb)
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
@@ -220,9 +232,9 @@ class GbxDevice(LK_Device):
             time.sleep(0.10)
 
             self.DEVICE.__class__ = MicrocodeDevice
-            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._lk.papi_recv_from_lk, self._lk.papi_send_to_lk)
+            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._papi)
 
-            self._lk.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, usb_interface)
+            self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, usb_interface)
 
             self._query_lk_firmware_version()
             self.FW["fw_dt"] = fpga_fw_dt
@@ -275,7 +287,7 @@ class GbxDevice(LK_Device):
             self.DEVICE.close()
 
             path = b"D:/chromatic_fpga/esp32t/impl/pnr/evt1_x2.fs" # TODO: use from system
-            self._lk.papi_fpga_program_sram(path, len(path), native_message, native_progress)
+            self._papi.papi_fpga_program_sram(path, len(path), native_message, native_progress)
 
             begin = time.monotonic()
             while time.monotonic() - begin < 10:
@@ -406,8 +418,6 @@ class GbxDevice(LK_Device):
     def Close(self, cartPowerOff=False):
         if self.DEVICE is None: return
         if self.DEVICE.is_open:
-            dprint("Disconnecting from the device")
-            self._lk.papi_close()
             self.DEVICE.close()
         self.DEVICE = None
         self.MODE = None

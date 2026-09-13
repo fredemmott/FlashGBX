@@ -32,28 +32,44 @@ class Device(serial.Serial):
     class ShutdownSignal:
         pass
 
-    _write_from_flashgbx: Callable[[ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint16], None]
-    _read_to_flashgbx: Callable[[ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint16], None]
+
+    def __init__(
+            self,
+            port: str | None = None,
+            baudrate: int = 9600,
+            bytesize: int = 8,
+            parity: str = "N",
+            stopbits: float = 1,
+            timeout: float | None = None,
+            xonxoff: bool = False,
+            rtscts: bool = False,
+            write_timeout: float | None = None,
+            dsrdtr: bool = False,
+            inter_byte_timeout: float | None = None,
+            exclusive: bool | None = None,
+    ):
+        super().__init__(port, baudrate, bytesize, parity, stopbits, timeout, xonxoff, rtscts, write_timeout, dsrdtr,
+                         inter_byte_timeout, exclusive)
+        self._papi = None
 
     def flush(self):
-        dprint("chromatic flush")
+        self._papi.papi_send_to_lk_flush()
         pass
 
     def lk_on_error(self, data: bytes) -> None:
         dprint("lk_on_error")
         pass
 
-    def init_chromatic(self, read_from_flashgbx, write_from_flashgbx):
-        self._read_to_flashgbx = read_from_flashgbx
-        self._write_from_flashgbx = write_from_flashgbx
+    def init_chromatic(self, papi):
+        self._papi = papi
 
     def close(self):
-        dprint("Chromatic close")
+        self._papi.papi_close()
         super().close()
 
     def read(self, size = 1) -> bytearray:
         buf = ctypes.create_string_buffer(size)
-        self._read_to_flashgbx(buf, size)
+        self._papi.papi_recv_from_lk(buf, size)
         return bytearray(buf)
 
     def write(self, data):
@@ -64,18 +80,15 @@ class Device(serial.Serial):
         buf_type = ctypes.c_char * count
         buf = buf_type.from_buffer(data)
 
-        self._write_from_flashgbx(ctypes.byref(buf), count)
+        self._papi.papi_send_to_lk(ctypes.byref(buf), count)
         return len(data)
 
     @property
     def in_waiting(self):
-        dprint("in-waiting")
-        return 0
+        return self._papi.papi_recv_from_lk_pending_count()
 
     def reset_input_buffer(self):
-        dprint("reset input")
-        pass
+        self._papi.papi_recv_from_lk_reset_input_buffer()
 
     def reset_output_buffer(self):
-        dprint("reset output")
-        pass
+        self._papi.papi_send_to_lk_reset_output_buffer()
