@@ -274,12 +274,6 @@ void PushNOPs(const T count) {
     });
 }
 
-// Marker for delays that are only needed on cartridges that are using
-// resistors instead of level shifters for RD, WR, AUDIO, etc
-constexpr bool DelaySetPinForResistors() {
-    return true;
-}
-
 } // namespace
 
 extern "C" uint8_t LK2MC_ping(const uint8_t cookie) {
@@ -309,7 +303,9 @@ extern "C" void LK2MC_verify_data(const uint8_t expected) {
     // `lk_dmg_verify_data()`, with the loop body moved to a dedicated microcode command
     PIN_RD_L();
     PIN_CLK_L(); // Pocket Camera needs this
+    _delay_200ns();
     RAW_DMG_DATA_SET(0);
+    _delay_300ns(); // Minimum for ModRetro with 39VF1681
     RAW_DMG_DATA_DIR_IN();
     RAW_DMG_ADDR_DIR_OUT();
     // Address should still be set from the write
@@ -444,10 +440,6 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
         return;
     }
 
-    // Maybe I should add a Command::DelayMicros to the firmware again to reduce
-    // input spam - but then we'd need an input buffer on the FPGA to accumulate
-    // commands while the wait is in progress.
-
     const auto nopCount = HundredsOfNSToNOPCount(static_cast<uint64_t>(duration) * 10);
     PushNOPs(nopCount);
 }
@@ -483,16 +475,6 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     default:
         LogError("LK2MC_SET_PIN called with invalid pin {}", pin);
         abort();
-    }
-
-    if constexpr (DelaySetPinForResistors()) {
-        // Required for writing to FunnyPlaying cartridges; tested with
-        // - MidnightTrace MBC3
-        // - EverSave MBC5
-        CommandQueue::get().append({
-            {Command::NOP, 0},
-            {Command::NOP, 0},
-        });
     }
 }
 
