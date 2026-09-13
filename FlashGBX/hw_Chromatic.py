@@ -269,7 +269,7 @@ class GbxDevice(LK_Device):
                     message = lambda s, l = widget.lblDevice: gui_progress(l, s)
                     orig_progress = widget.lblDevice.text()
                 if hasattr(widget, "SetProgressBars") and hasattr(widget, "prgStatus"):
-                    progress = lambda value, max_value: (widget.SetProgressBars(0, max_value, value), widget.prgStatus.repaint())
+                    progress = lambda value, max_value, w = widget: (w.SetProgressBars(0, max_value, value), w.prgStatus.repaint())
         except:
             pass
 
