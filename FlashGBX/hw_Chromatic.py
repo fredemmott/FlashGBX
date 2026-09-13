@@ -25,6 +25,10 @@ class GbxDevice(LK_Device):
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
 
+    MAX_BUFFER_READ = 4096
+    # Also limited by the TX buffer, for VerifyData calls
+    MAX_BUFFER_WRITE = 4096
+
     _c_callbacks = []
 
     def __init__(self):
