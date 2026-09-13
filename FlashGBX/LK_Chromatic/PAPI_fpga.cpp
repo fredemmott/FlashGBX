@@ -12,8 +12,12 @@ extern "C" {
 #include "openFPGAloader/gowin.hpp"
 #include "openFPGAloader/progressBar.hpp"
 
+#include <format>
+
+namespace {
+
 template<std::invocable<Gowin&> T>
-static void fpga_invoke(T&& fn, const std::string& path) {
+void fpga_invoke(T&& fn, const std::string& path) {
   const auto& cable = cable_list.at("gwu2x");
   jtag_pins_conf_t pins_config {};
   Jtag jtag {
@@ -40,13 +44,58 @@ static void fpga_invoke(T&& fn, const std::string& path) {
   std::invoke(std::forward<T>(fn), fpga);
 }
 
-extern "C" int papi_fpga_program_sram(const char* const path, const size_t path_len) try {
+PAPIStringCallback gMessageCallback { nullptr };
+
+template<class... Args>
+void message(
+    const std::format_string<Args...>& fmt,
+    Args&&... args) {
+  if (!gMessageCallback) return;
+  const auto msg = std::vformat(fmt.get(), std::make_format_args(args...));
+  gMessageCallback(msg.data(), static_cast<uint16_t>(msg.size()));
+};
+
+void op_message(const std::string_view op) {
+  message("Setting up Chromatic: {}...", op);
+}
+
+PAPIProgressCallback gProgressCallback { nullptr };
+std::size_t gProgressMax {};
+void update_progress(const std::size_t value) {
+  if (!gProgressCallback) {
+    return;
+  }
+  gProgressCallback(value, gProgressMax);
+}
+
+}
+
+extern "C" int papi_fpga_program_sram(
+  const char* const path,
+  const size_t path_len,
+  const PAPIStringCallback message_callback,
+  const PAPIProgressCallback progress_callback)
+try {
+
+  gMessageCallback = message_callback;
+  gProgressCallback = progress_callback;
+  const struct CallbackGuard {
+    ~CallbackGuard() {
+      gMessageCallback = nullptr;
+      gProgressCallback = nullptr;
+    }
+  } callbackGuard;
+
+  op_message("Connecting");
+
   fpga_invoke(
     [=](Gowin& fpga) {
       fpga.program(/* offset = */ 0, /* unprotect_flash = */ false);
     },
     {path, path_len}
   );
+
+  op_message("Rebooting");
   return 1;
 } catch (const std::exception& e) {
   LogError("uncaught exception in papi_fpga_program_sram(): {}", e.what());
@@ -64,28 +113,32 @@ int papi_fpga_reset() try {
 // openFPGAloader stubs
 
 void printError(const std::string &err, bool eol) {
-  mc_on_error(err.data(), err.size());
+  LogError("openFPGAloader ERROR: {}", err);
 }
 void printWarn(const std::string &warn, bool eol) {
-  mc_on_debug_message(warn.data(), warn.size());
+  LogError("openFPGAloader WARNING: {}", warn);
 }
 void printInfo(const std::string &info, bool eol) {
-  dprint("printInfo: {}", info);
+  dprint("openFPGAloader printInfo: {}", info);
 }
 void printSuccess(const std::string &success, bool eol) {
-  dprint("printSuccess: {}", success);
+  dprint("openFPGAloader printSuccess: {}", success);
 }
 
 ProgressBar::ProgressBar(const std::string &mess, int maxValue, int progressLen,
                          bool quiet) {
-  dprint("ProgressBar::ProgressBar({}, {}, {}, {})", mess, maxValue, progressLen, quiet);
+  dprint("ProgressBar::ProgressBar() {} {}", mess, maxValue, quiet);
+  op_message(mess);
+  gProgressMax = maxValue;
+  update_progress(0);
 }
 void ProgressBar::display(int value, char force) {
-  dprint("ProgressBar::display({}, {})", value, static_cast<int>(force));
+  update_progress(value);
 }
 void ProgressBar::done() {
   dprint("ProgressBar::done()");
+  update_progress(std::exchange(gProgressMax, 0));
 }
 void ProgressBar::fail() {
-  dprint("ProgressBar::fail()");
+  done(); // result code of operation is used
 }

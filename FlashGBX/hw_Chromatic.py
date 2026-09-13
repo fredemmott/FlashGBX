@@ -15,10 +15,15 @@ from .LK_Chromatic import Device as MicrocodeDevice
 
 from typing import cast
 
-NATIVE_DATA_CALLBACK = ctypes.CFUNCTYPE(
+NATIVE_STRING_CALLBACK = ctypes.CFUNCTYPE(
     None,  # return void
     ctypes.POINTER(ctypes.c_uint8),  # uint8_t* data
     ctypes.c_uint16  # uint16_t len
+)
+NATIVE_PROGRESS_CALLBACK = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_size_t,
+    ctypes.c_size_t
 )
 
 class GbxDevice(LK_Device):
@@ -53,8 +58,11 @@ class GbxDevice(LK_Device):
         self._load_ffi()
 
     def _load_ffi(self):
-        self._lk.papi_fpga_program_sram.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
-        self._lk.papi_fpga_program_sram.restype = None
+        self._lk.papi_fpga_program_sram.argtypes = [ctypes.c_char_p, ctypes.c_size_t, NATIVE_STRING_CALLBACK, NATIVE_PROGRESS_CALLBACK]
+        self._lk.papi_fpga_program_sram.restype = ctypes.c_int
+
+        self._lk.papi_fpga_reset.argtypes = []
+        self._lk.papi_fpga_reset.restype = ctypes.c_int
 
         self._lk.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
         self._lk.papi_open.restype = None
@@ -68,12 +76,12 @@ class GbxDevice(LK_Device):
         self._lk.papi_recv_from_lk.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
         self._lk.papi_recv_from_lk.restype = None
 
-        self._lk.papi_set_on_error_callback.argtypes = [NATIVE_DATA_CALLBACK]
+        self._lk.papi_set_on_error_callback.argtypes = [NATIVE_STRING_CALLBACK]
         self._lk.papi_set_on_error_callback.restype = None
 
         def cb(ptr, count) -> None:
             self._lk_on_error(bytes(ptr[:count]))
-        self._lk_on_error_cb = NATIVE_DATA_CALLBACK(cb)
+        self._lk_on_error_cb = NATIVE_STRING_CALLBACK(cb)
         self._lk.papi_set_on_error_callback(self._lk_on_error_cb)
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
@@ -81,7 +89,7 @@ class GbxDevice(LK_Device):
             result = py_fn(count)
             to_copy = min(len(result), count)
             ctypes.memmove(ptr, result, to_copy)
-        c_cb = NATIVE_DATA_CALLBACK(cb)
+        c_cb = NATIVE_STRING_CALLBACK(cb)
         reg_fn(c_cb)
         return c_cb
 
@@ -234,29 +242,38 @@ class GbxDevice(LK_Device):
         app = None
         orig_progress = None
 
-        def progress(s: str) -> None: pass
+        def message(s: str) -> None: pass
+        def progress(value: int, max_value: int) -> None: pass
 
         try:
             app = pyside.QtGui.QGuiApplication.instance()
-            if not app is None:
-                for window in pyside.QtGui.QGuiApplication.topLevelWindows():
-                    widget = pyside.QtWidgets.QWidget.find(window.winId())
-                    if hasattr(widget, "lblDevice"):
-                        def gui_progress(app, label, s:str) -> None:
-                            label.setText(s)
-                            app.processEvents()
-                        progress = lambda s, a = app, l = widget.lblDevice: gui_progress(a, l, s)
-                        orig_progress = widget.lblDevice.text()
-                        break
+            for window in pyside.QtGui.QGuiApplication.topLevelWindows():
+                widget = pyside.QtWidgets.QWidget.find(window.winId())
+                if hasattr(widget, "lblDevice"):
+                    def gui_progress(label, s:str) -> None:
+                        label.setText(s)
+                    message = lambda s, l = widget.lblDevice: gui_progress(l, s)
+                    orig_progress = widget.lblDevice.text()
+                if hasattr(widget, "SetProgressBars") and hasattr(widget, "prgStatus"):
+                    progress = lambda value, max_value: (widget.SetProgressBars(0, max_value, value), widget.prgStatus.repaint())
         except:
             pass
+
+        def message_callback(ptr, count) -> None:
+            raw = bytes(ptr[:count])
+            s = str(raw, "utf-8")
+            message(s)
+            if app:
+                app.processEvents()
+
+        native_message = NATIVE_STRING_CALLBACK(message_callback)
+        native_progress = NATIVE_PROGRESS_CALLBACK(progress)
+
         try:
-            progress("Found Chromatic with incompatible firmware, writing FlashGBX support to FPGA SRAM...")
             self.DEVICE.close()
 
             path = b"D:/chromatic_fpga/esp32t/impl/pnr/evt1_x2.fs" # TODO: use from system
-            self._lk.papi_fpga_program_sram(path, len(path))
-
+            self._lk.papi_fpga_program_sram(path, len(path), native_message, native_progress)
 
             begin = time.monotonic()
             while time.monotonic() - begin < 10:
@@ -275,11 +292,15 @@ class GbxDevice(LK_Device):
                         app.processEvents()
                 except SerialException:
                     continue
+            return True
         except Exception as e:
             return False
         finally:
+            progress(0, 100)
             if orig_progress:
-                progress(orig_progress)
+                message(orig_progress)
+                if app:
+                    app.processEvents()
 
     def _query_lk_firmware_version(self):
         self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
