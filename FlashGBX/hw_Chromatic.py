@@ -2,10 +2,13 @@
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 # Author: Fred Emmott
+import locale
 import sys
 from pathlib import Path
 import sysconfig
 import ctypes
+import tempfile
+import zipfile
 
 from . import pyside
 
@@ -286,8 +289,17 @@ class GbxDevice(LK_Device):
         try:
             self.DEVICE.close()
 
-            path = b"D:/chromatic_fpga/esp32t/impl/pnr/evt1_x2.fs" # TODO: use from system
-            self._papi.papi_fpga_program_sram(path, len(path), native_message, native_progress)
+            zip_path = os.path.join(AppContext.APP_PATH, "res", "fw_Chromatic.zip")
+            if not os.path.exists(zip_path):
+                raise FileNotFoundError(f"File not found: {zip_path}")
+
+            with zipfile.ZipFile(zip_path, "r") as zip_file:
+                with zip_file.open("evt1_x2.fs") as f: fs_bytes = f.read()
+            with tempfile.NamedTemporaryFile(suffix=".fs", delete_on_close=False) as fs_file:
+                fs_file.write(fs_bytes)
+                fs_file.close()
+                path = fs_file.name.encode(locale.getencoding())
+                self._papi.papi_fpga_program_sram(path, len(path), native_message, native_progress)
 
             begin = time.monotonic()
             while time.monotonic() - begin < 10:
