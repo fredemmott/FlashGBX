@@ -32,7 +32,6 @@ WizardStyle=modern
 UninstallDisplayIcon={app}\FlashGBX-app.exe
 UninstallDisplayName={#MyAppName} v{#MyAppVersion}
 PrivilegesRequired=lowest
-SetupArchitecture=x64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
