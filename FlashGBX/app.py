@@ -6,7 +6,7 @@ import platform, importlib, re, sys
 
 class AppInfo:
 	NAME = "FlashGBX"
-	VERSION_PEP440 = "5.1"
+	VERSION_PEP440 = "5.1+fredemmott.1"
 	VERSION = "v{:s}".format(VERSION_PEP440)
 	VERSION_TIMESTAMP = 1788010533
 
@@ -159,7 +159,7 @@ def generate_filename(mode, header, settings=None):
 
 # Hardware device backends
 _hw_devices = []
-HW_DEVICE_MODULES = [ "hw_GBxCartRW", "hw_GBFlash", "hw_JoeyJr", "hw_GameBub" ]
+HW_DEVICE_MODULES = [ "hw_GBxCartRW", "hw_GBFlash", "hw_JoeyJr", "hw_GameBub", "hw_Chromatic" ]
 for _name in HW_DEVICE_MODULES:
 	try:
 		_hw_devices.append(importlib.import_module(f"{__package__}.{_name}"))
