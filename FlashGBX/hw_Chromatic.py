@@ -31,7 +31,7 @@ NATIVE_PROGRESS_CALLBACK = ctypes.CFUNCTYPE(
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
-    ID_PREFIX = b"fredemmott/FlashGBX\x00"
+    ID_PREFIX = b"fredemmott/CartIO\x00"
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
@@ -179,10 +179,15 @@ class GbxDevice(LK_Device):
             if not match:
                 dprint("Failed to write firmware to SRAM")
                 self.FW = None
+            if match and not self._query_firmware_version():
+                dprint("Firmware ID is unstable")
+                self.FW = None
             if self.DEVICE is None:
                 return False
-            self.DEVICE._haveFredEmmottMicrocode = match
+            self._activate_cartridge_io_mode()
+            self.DEVICE._haveFredEmmottMicrocode = True
         return self.DEVICE._haveFredEmmottMicrocode
+
 
     def _query_firmware_version(self) -> bool:
         try:
@@ -190,56 +195,50 @@ class GbxDevice(LK_Device):
             self.DEVICE.reset_input_buffer()
             self.DEVICE.reset_output_buffer()
 
-            self._write(bytearray(b'\x55\xAA'))
+            self._write(bytearray(b'\xAA\x55\x90'))
             time.sleep(0.01)
             device_id = self.DEVICE.read(self.DEVICE.in_waiting)
 
-            if not device_id.startswith(self.ID_PREFIX):
-                return False
+            view = memoryview(device_id)
 
-            self._write(bytearray(b'\x55\xAA'))
-            time.sleep(0.01)
-            device_id_dup = self.DEVICE.read(self.DEVICE.in_waiting)
-            if device_id_dup != device_id:
-                raise Exception("Device ID mismatch")
+            p = 0
+            def consume(n: int):
+                nonlocal view
+                ret = view[:n]
+                view = view[n:]
+                return ret
 
-            if len(device_id) != 28:
-                dprint("Running supported firmware, but not a supported version")
-                return False
+            match = False
+            while len(view) > 2:
+                section_len = int.from_bytes(consume(2), "big", signed=False)
+                if len(view) < (section_len - 2): return False
+                if consume(len(self.ID_PREFIX)) != self.ID_PREFIX: continue
+                match = True
+                break
+
+            if not match: return False
 
             # BCD
-            year = device_id[20:22].hex()
-            month = device_id[22:23].hex()
-            day = device_id[23:24].hex()
+            year = consume(2).hex()
+            month = consume(1).hex()
+            day = consume(1).hex()
 
-            revision = device_id[24]
+            revision = consume(1)[0]
 
-            upstream_major = device_id[25]
-            upstream_minor = device_id[26]
-            usb_interface = device_id[27]
-
-            fpga_fw_dt = f"{year}-{month}-{day}"
+            upstream_major = consume(1)[0]
+            upstream_minor = consume(1)[0]
+            usb_interface = consume(1)[0]
 
             self.FW["device_name"] = self.DEVICE_NAME
             self.FW["pcb_name"] = self.DEVICE_NAME
-            self.FW["fw_ver/ChromaticDumper"] = f"{year}.{month}.{day}.{revision}"
-            self.FW["fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
+            self.FW["fw_dt"] = f"{year}-{month}-{day}"
+            self.FW["hw_Chromatic/fw_ver/CartIO"] = f"{year}.{month}.{day}.{revision}"
+            self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
+            self.FW["hw_Chromatic/CartIO_usb_if"] = usb_interface
 
-            if self.FW["fw_ver/ChromaticDumper"] != "2026.08.27.0":
+            if self.FW["hw_Chromatic/fw_ver/CartIO"] != "2026.09.13.0":
                 dprint("Running microcode firmware, but not a supported version")
                 return False
-
-
-            self._write(bytearray(b'LK')) # Switch mode
-            time.sleep(0.10)
-
-            self.DEVICE.__class__ = MicrocodeDevice
-            cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._papi)
-
-            self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, usb_interface)
-
-            self._query_lk_firmware_version()
-            self.FW["fw_dt"] = fpga_fw_dt
             return True
 
         except Exception as e:
@@ -253,6 +252,17 @@ class GbxDevice(LK_Device):
             except:
                 pass
             return False
+
+    def _activate_cartridge_io_mode(self):
+        self._write(bytearray(b'CartIO\0')) # Switch mode
+        time.sleep(0.10)
+
+        self.DEVICE.__class__ = MicrocodeDevice
+        cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._papi)
+
+        self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, self.FW["hw_Chromatic/CartIO_usb_if"])
+
+        self._query_lk_firmware_version()
 
     def _program_sram(self) -> bool:
         app = None
@@ -305,10 +315,7 @@ class GbxDevice(LK_Device):
                 time.sleep(0.1)
                 try:
                     self.DEVICE.open()
-                    self._write(bytearray(b'\x55\xAA'))
-                    time.sleep(0.01)
-                    device_id = self.DEVICE.read(self.DEVICE.in_waiting)
-                    if device_id.startswith(self.ID_PREFIX):
+                    if self._query_firmware_version():
                         elapsed = time.monotonic() - begin
                         dprint(f"Programmed Chromatic SRAM in {elapsed} seconds")
                         return True
@@ -366,7 +373,7 @@ class GbxDevice(LK_Device):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        return f"L{self.FW['fw_ver']} / MC v{self.FW["fw_ver/ChromaticDumper"]} / ModRetro v{self.FW['fw_ver/Upstream']}"
+        return f"L{self.FW['fw_ver']} / MC v{self.FW["hw_Chromatic/fw_ver/CartIO"]} / ModRetro v{self.FW['hw_Chromatic/fw_ver/Upstream']}"
 
     def GetFullNameExtended(self, more=False):
         return f"{self.GetFullName()} - {self.GetFirmwareVersion()}"
