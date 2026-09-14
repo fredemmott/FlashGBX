@@ -236,8 +236,8 @@ class GbxDevice(LK_Device):
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
             self.FW["hw_Chromatic/CartIO_usb_if"] = usb_interface
 
-            if self.FW["hw_Chromatic/fw_ver/CartIO"] != "2026.09.13.0":
-                dprint("Running microcode firmware, but not a supported version")
+            if self.FW["hw_Chromatic/fw_ver/CartIO"] != "2026.09.14.0":
+                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version")
                 return False
             return True
 
@@ -254,7 +254,7 @@ class GbxDevice(LK_Device):
             return False
 
     def _activate_cartridge_io_mode(self):
-        self._write(bytearray(b'CartIO\0')) # Switch mode
+        self._write(bytearray(b'fredemmott/CartIO\0')) # Switch mode
         time.sleep(0.10)
 
         self.DEVICE.__class__ = MicrocodeDevice
