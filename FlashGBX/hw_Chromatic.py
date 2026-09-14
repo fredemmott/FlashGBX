@@ -50,16 +50,18 @@ class GbxDevice(LK_Device):
         self._load_lk()
 
     def _load_lk(self):
-        native_dir = Path(sysconfig.get_path("platlib")) / "FlashGBX"
-        match sys.platform:
-            case "win32":
-                os.add_dll_directory(os.path.dirname(native_dir))
-                ext = ".dll"
-            case _:
-                # even on Darwin (macOS), we get a .so, not a .dylib
-                ext = ".so"
-        lk_path =  native_dir / f"_LK_Chromatic{ext}"
-        self._papi = ctypes.CDLL(str(lk_path))
+        ext = ".dll" if sys.platform == "win32" else ".so"
+        name = f"_LK_Chromatic{ext}"
+        # Support running from pyinstaller on macOS
+        if getattr(sys, 'frozen', False):
+            base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+            c1 = Path(base_path) / "_internal" / "FlashGBX"
+            c2 = Path(base_path) / "FlashGBX"
+            native_dir = c1 if (c1 / name).exists() else c2
+        else:
+            native_dir = Path(sysconfig.get_path("platlib")) / "FlashGBX"
+        path = native_dir / name
+        self._papi = ctypes.CDLL(str(path))
         self._load_ffi()
 
     def _load_ffi(self):
