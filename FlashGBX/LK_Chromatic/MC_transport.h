@@ -27,13 +27,19 @@ void mc_on_debug_message(const char* message, size_t length);
 
 /***** MUST BE CALLED BY TRANSPORT *****/
 
-/* You should begin an async batch before calling `lk_loop()`, and end it
- * immediately after */
-void mc_begin_async_batch();
-void mc_end_async_batch();
-
 /* Pass first byte to this; additional bytes will be fetched by a call to
  * `lk_recv_from_host()` */
-void lk_loop(uint8_t command);
+void mc_exec(uint8_t command);
+
+/***** MAY BE CALLED BY TRANSPORT *****/
+
+/* Execute a PING outside of an async batch.
+ *
+ * You might want to do this in your 'open()' function as a test.
+ *
+ * @returns bitwise negation of input
+ */
+[[nodiscard]]
+uint8_t mc_standalone_ping(uint8_t);
 
 #endif // FLASHGBX_NATIVE_MC_IO_H

@@ -181,9 +181,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
                     }
                     TraceLoggingThreadActivity<gTL> tla;
                     TraceLoggingWriteStart(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
-                    mc_begin_async_batch();
-                    lk_loop(cmd);
-                    mc_end_async_batch();
+                    mc_exec(cmd);
                     TraceLoggingWriteStop(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
                 }
             }
@@ -197,7 +195,6 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
     SPAMMY(TraceLoggingWriteStop(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 }
 
-
 extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber) {
     dprint("Attempting to open libusb device");
     mc_usb_open(vendorID, productID, interfaceNumber);
@@ -207,9 +204,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t produc
     const auto expected = (~cookie) & 0xff;
 
     dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
-    mc_begin_async_batch();
-    const auto actual = LK2MC_ping(cookie);
-    mc_end_async_batch();
+    const auto actual = mc_standalone_ping(cookie);
     if (actual != expected) {
         LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
         return;

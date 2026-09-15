@@ -553,12 +553,15 @@ extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
     CommandQueue::get().push(Command::SetData, data);
 }
 
-extern "C" void mc_begin_async_batch() {
-    CommandQueue::get().start_batch();
+extern "C" void mc_exec(const uint8_t command) {
+    auto& cq = CommandQueue::get();
+    cq.start_batch();
+    lk_loop(command);
+    cq.end_batch();
 }
 
-extern "C" void mc_end_async_batch() {
-    CommandQueue::get().end_batch();
+extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
+    return LK2MC_ping(cookie);
 }
 
 extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {
