@@ -564,6 +564,14 @@ extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
     return LK2MC_ping(cookie);
 }
 
+extern "C" void mc_init() {
+    // TODO: mc_transport_set_callbacks(...);
+}
+
+extern "C" void mc_reset() {
+    mc_transport_set_callbacks(nullptr);
+}
+
 extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {
     CommandQueue::get().flush(nullptr, 0);
     lk_recv_from_host(data, count);

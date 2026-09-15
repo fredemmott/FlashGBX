@@ -15,6 +15,60 @@ extern "C" {
 
 namespace {
 
+
+struct counters_t {
+    std::size_t tx_enqueued {};
+    std::size_t rx_enqueued {};
+
+    std::atomic<std::size_t> tx_complete {};
+    std::atomic<std::size_t> rx_complete {};
+};
+counters_t& counters() {
+    static counters_t instance {};
+    return instance;
+}
+
+struct callbacks_t {
+    void onTxProgress(const std::size_t count, const int error) const {
+        onProgress(counters().tx_complete, _callbacks.on_tx_progress, count, error);
+    }
+
+    void onRxProgress(const std::size_t count, const int error) const {
+        onProgress(counters().rx_complete, _callbacks.on_rx_progress, count, error);
+    }
+
+    void set(const mc_transport_callbacks* const callbacks) {
+        if (callbacks) {
+            _callbacks = *callbacks;
+        } else {
+            _callbacks = {};
+        }
+    }
+private:
+    mc_transport_callbacks _callbacks {};
+
+    void onProgress(
+        std::atomic<std::size_t>& counter,
+        const decltype(mc_transport_callbacks::on_tx_progress) callback,
+        const std::size_t count,
+        const int error) const {
+        const auto old = counter.fetch_add(count, std::memory_order::relaxed);
+        if (!callback) {
+            return;
+        }
+        const mc_transport_progress progress {
+            .completed_this_transaction = count,
+            .completed_cumulative = old + count,
+            .error = error,
+        };
+        callback(_callbacks.user_data, &progress);
+    }
+};
+callbacks_t& callbacks() {
+    static callbacks_t instance {};
+    return instance;
+}
+
 struct [[nodiscard]] LibUSBTransfer {
     // Microcode >= 65KB, so can't use uint16_t despite *data* <= 4KB
     using Result = std::expected<std::size_t, libusb_transfer_status>;
@@ -90,11 +144,8 @@ struct [[nodiscard]] LibUSBTransfer {
         while (!_libUSBCompletionFlag) {
             libusb_handle_events_completed(_context, &_libUSBCompletionFlag);
         }
-        if (_state != State::Complete) {
-            this->transition<State::Submitted, State::Complete>();
-        }
         if (_transfer->status == LIBUSB_TRANSFER_COMPLETED) [[likely]] {
-            return static_cast<std::size_t> (_transfer->actual_length);
+            return static_cast<std::size_t>(_transfer->actual_length);
         }
         TraceLoggingWrite(gTL, "LibUSBTransfer::wait()/failure",
             TraceLoggingValue(std::to_underlying(_transfer->status), "libusb-status"),
@@ -121,7 +172,19 @@ private:
     State _state { State::Init };
 
     static void callback(libusb_transfer* const t) {
-        *static_cast<int*>(t->user_data) = 1;
+        const auto count = static_cast<std::size_t>(t->actual_length);
+        const auto isRX = (t->endpoint & LIBUSB_ENDPOINT_DIR_MASK) == LIBUSB_ENDPOINT_IN;
+
+        if (isRX) {
+            callbacks().onRxProgress(count, t->status);
+        } else {
+            callbacks().onTxProgress(count, t->status);
+        }
+
+        auto& self = *static_cast<LibUSBTransfer*>(t->user_data);
+        self.transition<State::Submitted, State::Complete>();
+        self._libUSBCompletionFlag = 1;
+
     }
 
     void moveFrom(LibUSBTransfer&& other) {
@@ -159,6 +222,15 @@ private:
         _state = U;
     }
 };
+
+struct transfers_t {
+    std::list<LibUSBTransfer> tx {};
+    std::list<LibUSBTransfer> rx {};
+};
+transfers_t& transfers() {
+    static transfers_t _transactions;
+    return _transactions;
+}
 
 struct LibUSBDevice {
     LibUSBDevice() = delete;
@@ -254,104 +326,66 @@ std::optional<LibUSBDevice>& device() {
     return ret;
 }
 
-#ifdef _WIN32
+enum class Operation { TX, RX };
+template<Operation T>
 [[nodiscard]]
-double SecondsBetween(const LARGE_INTEGER& qpBegin, const LARGE_INTEGER& qpEnd) {
-    static const auto multiplier = [] {
-        LARGE_INTEGER freq;
-        QueryPerformanceFrequency(&freq);
-        return 1.0 / static_cast<double>(freq.QuadPart);
-    }();
-    return static_cast<double>(qpEnd.QuadPart - qpBegin.QuadPart) * multiplier;
-}
-#endif
+std::size_t enqueue(
+    std::conditional_t<T == Operation::TX, const uint8_t*, uint8_t*> data,
+    const size_t count
+) {
+    static constexpr bool IsRX = T == Operation::RX;
+    auto& counter = IsRX ? counters().rx_enqueued : counters().tx_enqueued;
+    auto& ops = IsRX ? transfers().rx : transfers().tx;
 
+    const auto before = counter;
+    const auto after = before + count;
+    counter = after;
+
+    // We reliably get a partial success above 64KB on Windows, so let's
+    // just queue up all the transfers we'll end up doing and get a packed
+    // queue instead of needing to resubmit later.
+    constexpr std::size_t MaxChunk = 64*1024;
+
+    for (std::size_t i = 0; i < count; i += MaxChunk) {
+        const auto chunk = std::min(i + (64*1024), count) - i;
+        if constexpr (IsRX) {
+            ops.emplace_back(device()->read(data + i, chunk));
+        } else {
+            ops.emplace_back(device()->write(data + i, chunk));
+        }
+        ops.back().submit();
+    }
+
+    return before;
+}
+
+}
+
+extern "C" void mc_transport_set_callbacks(const mc_transport_callbacks* new_callbacks) {
+    callbacks().set(new_callbacks);
+}
+
+extern "C" size_t mc_transport_enqueue_tx(const uint8_t* const data, const size_t count) {
+    return enqueue<Operation::TX>(data, count);
+}
+
+extern "C" size_t mc_transport_enqueue_rx(uint8_t* const data, const size_t count) {
+    return enqueue<Operation::RX>(data, count);
 }
 
 extern "C" void mc_exec_batch(
-  const uint8_t* const txData,
-  const size_t txCount,
-  uint8_t* const rxData,
-  const size_t rxSize) {
-#ifdef ENABLE_SPAMMY
-    LARGE_INTEGER qpBegin, qpEnd;
-    QueryPerformanceCounter(&qpBegin);
-#endif
-
-    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
-    SPAMMY(TraceLoggingWriteStart(
-        tla,
-        "mc_exec_batch()",
-        TraceLoggingValue(txCount, "txCount"),
-        TraceLoggingValue(rxSize, "rxSize"),
-        TraceLoggingValue(txCount / 2, "commandCount")
-    ));
-
-    LibUSBTransfer::Result bytesWritten, bytesRead;
-    {
-        // We reliably get a partial success above 64KB on Windows, so let's
-        // just queue up all the transfers we'll end up doing and get a packed
-        // queue instead of needing to resubmit later.
-        static constexpr auto MaxTXChunk = 64*1024;
-        std::list<LibUSBTransfer> txOps;
-        for (std::size_t i = 0; i < txCount; i += MaxTXChunk) {
-            const auto count = std::min(i + (64*1024), txCount) - i;
-            txOps.emplace_back(device()->write(txData + i, count));
-            txOps.back().submit();
-        }
-
-        std::ignore = txOps.back().wait(); // values checked below
-
-        const auto txResults = std::views::transform(txOps, &LibUSBTransfer::wait) | std::ranges::to<std::vector>();
-        const auto firstFailure = std::ranges::find_if_not(txResults, &LibUSBTransfer::Result::has_value);
-        if (firstFailure != txResults.end()) [[unlikely]] {
-            bytesWritten = *firstFailure;
-        } else {
-            bytesWritten = std::ranges::fold_left(
-                std::views::transform(txResults, [](const auto& it) { return it.value(); }),
-                0,
-                std::plus<std::size_t>{});
-        }
-
-        if (rxSize == 0) {
-            bytesRead = 0;
-        } else {
-            auto rxOp = device()->read(rxData, rxSize);
-            bytesRead = rxOp.submit().wait();
-        }
-    };
-
-    bool error = false;
-
-    if (!bytesRead.has_value()) [[unlikely]] {
-        error = true;
-        LogError("mc_exec_batch()/rx-error: libusb status: {}", std::to_underlying(bytesRead.error()));
-    } else if (bytesRead.value() != rxSize) {
-        error = true;
-        LogError("mc_exec_batch()/rx-count: expected {} actual {}", rxSize, bytesRead.value());
+    const uint8_t* const txData,
+    const size_t txCount,
+    uint8_t* const rxData,
+    const size_t rxCount) {
+    if (txCount) {
+        std::ignore = mc_transport_enqueue_tx(txData, txCount);
+        std::ignore = transfers().tx.back().wait();
     }
-
-    if (!bytesWritten.has_value()) [[unlikely]] {
-        error = true;
-        LogError("mc_exec_batch()/tx-error: libusb status: {}", std::to_underlying(bytesWritten.error()));
-    } else if (bytesWritten.value() != txCount) [[unlikely]] {
-        error = true;
-        LogError("mc_exec_batch()/tx-count: expected {} actual {}", txCount, bytesWritten.value());
+    if (rxCount) {
+        std::ignore = mc_transport_enqueue_rx(rxData, rxCount);
+        std::ignore = transfers().rx.back().wait();
     }
-
-    if (error) [[unlikely]] {
-        abort();
-    }
-
-#ifdef ENABLE_SPAMMY
-    QueryPerformanceCounter(&qpEnd);
-    const auto elapsed = SecondsBetween(qpBegin, qpEnd);
-
-    TraceLoggingWriteStop(tla, "mc_exec_batch()",
-        TraceLoggingValue(static_cast<double>(txCount) / elapsed, "usb-tx-EBps"),
-        TraceLoggingValue(static_cast<double>(rxSize) / elapsed, "usb-rx-EBps"),
-        TraceLoggingValue(static_cast<double>(rxSize + txCount) / elapsed, "usb-trx-EBps"));
-#endif
 }
 
 void mc_usb_open(
@@ -360,8 +394,12 @@ void mc_usb_open(
   const uint8_t interfaceNumber) {
   device().reset();
   device().emplace(vendorID, productID, interfaceNumber);
+
+  mc_init();
 }
 
 void mc_usb_close() {
+    mc_reset();
+
     device().reset();
 }
