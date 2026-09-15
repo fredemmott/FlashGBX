@@ -326,6 +326,17 @@ void PushNOPs(const T count) {
     });
 }
 
+struct output_enable_state_t {
+    std::optional<bool> audio;
+    std::optional<bool> data;
+    std::optional<bool> address;
+};
+
+output_enable_state_t& output_enable_state() {
+    static output_enable_state_t state;
+    return state;
+}
+
 } // namespace
 
 extern "C" uint8_t LK2MC_ping(const uint8_t cookie) {
@@ -546,6 +557,28 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
 }
 
 extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe) {
+    switch (tristate_pin) {
+    case TRISTATE_AUDIO:
+        if (output_enable_state().audio == oe) {
+            return;
+        }
+        output_enable_state().audio = oe;
+        break;
+    case TRISTATE_DATA:
+        if (output_enable_state().data == oe) {
+            return;
+        }
+        output_enable_state().data = oe;
+        break;
+    case TRISTATE_ADDRESS:
+        if (output_enable_state().address == oe) {
+            return;
+        }
+        output_enable_state().address = oe;
+        break;
+    default:
+    }
+
     auto& cq = CommandQueue::get();
     const auto data_in_delays =
         (tristate_pin == TRISTATE_DATA)
@@ -601,6 +634,8 @@ extern "C" void mc_init() {
         .on_tx_progress = &tx_progress_callback,
     };
     mc_transport_set_callbacks(&callbacks);
+
+    output_enable_state() = {};
 }
 
 extern "C" void mc_reset() {
