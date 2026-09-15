@@ -40,9 +40,10 @@ class GbxDevice(LK_Device):
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
 
-    MAX_BUFFER_READ = 4096
-    # Also limited by the TX buffer, for VerifyData calls
-    MAX_BUFFER_WRITE = 4096
+    # - Align with 512-byte USB packet sizes
+    # - Fit in a uint16 as the LK protocol requires it
+    MAX_BUFFER_READ = 0x10000 - 512
+    MAX_BUFFER_WRITE = MAX_BUFFER_READ
 
     _c_callbacks = []
 

@@ -71,14 +71,19 @@ constexpr bool ProducesRX(const Command cmd) noexcept {
 
 struct CommandBuffer {
     CommandBuffer(const CommandBuffer&) = delete;
-    CommandBuffer(CommandBuffer&&) = delete;
     CommandBuffer& operator=(const CommandBuffer&) = delete;
-    CommandBuffer& operator=(CommandBuffer&&) = delete;
+    CommandBuffer(CommandBuffer&& other) noexcept { this->moveFrom(std::move(other)); }
+    CommandBuffer& operator=(CommandBuffer&& other) noexcept {
+        this->moveFrom(std::move(other));
+        return *this;
+    }
 
-    CommandBuffer() {
-        constexpr std::size_t InitialSize = 65536;
-        _begin = _end = static_cast<uint8_t*>(std::malloc(InitialSize));
-        _capacity = InitialSize;
+    explicit CommandBuffer(const std::size_t initialCapacity) {
+        _begin = _end = static_cast<uint8_t*>(std::malloc(initialCapacity));
+        _capacity = initialCapacity;
+    }
+
+    CommandBuffer() : CommandBuffer(65536) {
     }
 
     ~CommandBuffer() {
@@ -93,6 +98,17 @@ struct CommandBuffer {
         _end[1] = arg8;
 
         _end += BytesPerCommand;
+    }
+
+    [[nodiscard]]
+    std::size_t capacity() const noexcept {
+        return _capacity;
+    }
+
+    void reset(const std::size_t capacity) {
+        std::free(_begin);
+        _begin = _end = static_cast<uint8_t*>(std::malloc(capacity));
+        _capacity = capacity;
     }
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
@@ -140,6 +156,13 @@ private:
             _end = _begin + s;
         }
     }
+
+    void moveFrom(CommandBuffer&& other) {
+        std::free(_begin);
+        _begin = std::exchange(other._begin, nullptr);
+        _end = std::exchange(other._end, nullptr);
+        _capacity = std::exchange(other._capacity, 0);
+    }
 };
 
 struct CommandQueue {
@@ -178,37 +201,23 @@ struct CommandQueue {
             abort();
         }
 
-        if (const auto unflushed = std::exchange(_expectedRX, 0); unflushed != 0) [[unlikely]] {
-            LogError("CommandQueue::end() called with {} expected RX bytes; call flush() first", unflushed);
-            abort();
-        }
-
-        if (_buffer.byte_count() == 0) {
-            return;
-        }
-        flush(nullptr, 0);
-        _buffer.clear();
+        LK_ASYNC_FLUSH(nullptr, 0);
     }
 
     void push(const Command cmd, const uint8_t arg = 0x00) {
         _buffer.push(cmd, arg);
-
         if (ProducesRX(cmd)) {
-            _expectedRX++;
-            SUPER_SPAMMY(TraceLoggingWrite(gTL, "push()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(cmd), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+            _producesRX = true;
         }
     }
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
     void pushBytes(const std::size_t count, Fn&& fn) {
-        const auto base = _buffer.byte_count();
+        const auto offset = byte_count();
         _buffer.pushBytes(count, std::forward<Fn>(fn));
-        const auto begin = _buffer.data() + base;
-        const auto end = begin + count;
-        for (auto it = begin; it < end; it += BytesPerCommand) {
-          if (ProducesRX(static_cast<Command>(*it))) {
-                _expectedRX++;
-                SUPER_SPAMMY(TraceLoggingWrite(gTL, "pushBytes()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(*it), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+        for (auto it = begin() + offset; it != end(); it += BytesPerCommand) {
+            if (ProducesRX(static_cast<Command>(*it))) {
+                _producesRX = true;
             }
         }
     }
@@ -228,22 +237,43 @@ struct CommandQueue {
     }
 
 
-    void flush(uint8_t* rxData, uint16_t rxCount);
+    void flush();
 
-    [[nodiscard]] std::size_t byte_count() const { return _buffer.byte_count(); }
+    [[nodiscard]] std::size_t byte_count() const noexcept { return _buffer.byte_count(); }
+
+    [[nodiscard]] bool empty() const noexcept { return byte_count() == 0; }
 
     static CommandQueue& get() {
         static CommandQueue instance {};
         return instance;
     }
 
+    void on_tx_progress(const mc_transport_progress& p) {
+        while ((!_busy.empty()) && _busy.front().fence <= p.completed_cumulative) {
+            _busy.pop_front();
+        }
+    }
 private:
+    struct SubmittedBuffer {
+        CommandBuffer buffer {0};
+        std::size_t fence {};
+    };
+
     CommandBuffer _buffer {};
+
     bool _enabled { false };
-    std::size_t _expectedRX {};
+    bool _producesRX { false };
+
+    std::list<SubmittedBuffer> _busy;
 
     CommandQueue() = default;
 };
+
+void tx_progress_callback(
+    [[maybe_unused]] void* user_data,
+    const mc_transport_progress* p) {
+    CommandQueue::get().on_tx_progress(*p);
+}
 
 template<std::unsigned_integral T>
 constexpr T HundredsOfNSToNOPCount(const T count) {
@@ -299,10 +329,10 @@ void PushNOPs(const T count) {
 } // namespace
 
 extern "C" uint8_t LK2MC_ping(const uint8_t cookie) {
-    auto& cq = CommandQueue::get();
-    cq.push(Command::Ping, cookie);
+    CommandQueue::get().push(Command::Ping, cookie);
     uint8_t ret {};
-    cq.flush(&ret, 1);
+    LK_ASYNC_ENQUEUE_RX(&ret, 1);
+    LK_ASYNC_FLUSH(nullptr, 0);
     return ret;
 }
 
@@ -346,7 +376,7 @@ extern "C" uint8_t LK2MC_verify_status_register_flush(uint8_t* const buffer, con
     const auto mask = _lk_var16[LK_VAR16_STATUS_REGISTER_MASK];
     const auto value = _lk_var16[LK_VAR16_STATUS_REGISTER_VALUE];
 
-    CommandQueue::get().flush(buffer, count);
+    LK_ASYNC_FLUSH(buffer, count);
     const auto begin = buffer;
     const auto end = buffer + count;
 
@@ -397,42 +427,35 @@ extern "C" void LK2MC_set_variable(const uint8_t size, const uint32_t key, const
     }
 }
 
-extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
-    CommandQueue::get().flush(data, len);
+extern "C" void LK2MC_enqueue_rx(uint8_t* const data, const uint16_t len) {
+    if (!(data && len)) {
+        return;
+    }
+    std::memset(data, 0xA0, len); // arbitrary marker
+    CommandQueue::get().flush();
+    std::ignore = mc_transport_enqueue_rx(data, len);
 }
 
-void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
-    if (rxCount) {
+extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
+    CommandQueue::get().flush();
+    LK_ASYNC_ENQUEUE_RX(data, len);
+    mc_transport_flush();
+}
+
+void CommandQueue::flush() {
+    if (empty()) {
+        return;
+    }
+    if (std::exchange(_producesRX, false)) {
         push(Command::Flush);
     }
     const auto txCount = _buffer.byte_count();
 
-    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
-    SPAMMY(TraceLoggingWriteStart(tla, "CommandQueue::flush()", TraceLoggingValue(txCount, "txCount"), TraceLoggingValue(rxCount, "rxCount")));
+    const auto finishedAt = mc_transport_enqueue_tx(_buffer.data(), txCount);
 
-    if ((txCount == 0) && (rxCount == 0)) {
-        SPAMMY(TraceLoggingWriteStop(tla, "CommandQueue::flush()", TraceLoggingValue("noop", "result")));
-        return;
-    }
-
-    // Limited by device-side TX buffer
-    if (rxCount > 4096) [[unlikely]] {
-        LogError("Can't flush more than 4096 bytes");
-        abort();
-    }
-    if (const auto unflushed = std::exchange(_expectedRX, 0); unflushed != rxCount) [[unlikely]] {
-        LogError("Expected to flush {} RX bytes, asked for {}", unflushed, rxCount);
-        abort();
-    }
-
-
-    std::ignore = mc_transport_enqueue_tx(_buffer.data(), txCount);
-    std::ignore = mc_transport_enqueue_rx(rxData, rxCount);
-    mc_transport_flush();
-
-    _buffer.clear();
-
-    SPAMMY(TraceLoggingWriteStop(tla, "CommandQueue::flush()", TraceLoggingValue("OK", "result")));
+    const auto capacity = _buffer.capacity();
+    _busy.emplace_back(std::move(_buffer), finishedAt);
+    _buffer.reset(capacity);
 }
 
 extern "C" uint32_t LK2MC_TIMESTAMP_NOW() {
@@ -475,7 +498,8 @@ extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
     cq.push(Command::GetStateBits);
 
     uint8_t value;
-    cq.flush(&value, 1);
+    LK_ASYNC_ENQUEUE_RX(&value, 1);
+    LK_ASYNC_FLUSH(nullptr, 0);
 
     static constexpr auto cmp = std::to_underlying(StateBits::CartPresent);
     return (value & cmp) == cmp;
@@ -573,7 +597,10 @@ extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
 }
 
 extern "C" void mc_init() {
-    // TODO: mc_transport_set_callbacks(...);
+    const mc_transport_callbacks callbacks {
+        .on_tx_progress = &tx_progress_callback,
+    };
+    mc_transport_set_callbacks(&callbacks);
 }
 
 extern "C" void mc_reset() {
@@ -581,11 +608,11 @@ extern "C" void mc_reset() {
 }
 
 extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {
-    CommandQueue::get().flush(nullptr, 0);
+    LK_ASYNC_FLUSH(nullptr, 0);
     lk_recv_from_host(data, count);
 }
 
 extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t count) {
-    CommandQueue::get().flush(nullptr, 0);
+    LK_ASYNC_FLUSH(nullptr, 0);
     lk_send_to_host(data, count);
 }

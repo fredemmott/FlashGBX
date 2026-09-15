@@ -356,7 +356,7 @@ std::size_t enqueue(
         ops.back().submit();
     }
 
-    return before;
+    return after;
 }
 
 }

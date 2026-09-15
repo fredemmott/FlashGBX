@@ -30,10 +30,10 @@ struct mc_transport_callbacks {
 void mc_transport_set_callbacks(const mc_transport_callbacks*);
 void mc_transport_flush();
 
-/* returns previous cumulative count */
+/* returns cumulative count when this is finished */
 [[nodiscard]]
 size_t mc_transport_enqueue_tx(const uint8_t* data, size_t count);
-/* returns previous cumulative count */
+/* returns cumulative count when this is finished */
 [[nodiscard]]
 size_t mc_transport_enqueue_rx(uint8_t* data, size_t count);
 

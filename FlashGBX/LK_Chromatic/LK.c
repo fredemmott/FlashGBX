@@ -16,8 +16,8 @@ u16 _lk_flashcmd_data[32];
 u8 _lk_bankcmd_num = 0;
 u32 _lk_bankcmd_addr[3];
 u8 _lk_bankcmd_mode[3];
-u8 data_buffer[CHUNK_MAX_LEN];
-u8 verify_data_buffer[CHUNK_MAX_LEN];
+u8 data_buffer[BUFFER_LEN];
+u8 verify_data_buffer[BUFFER_LEN];
 u16 flash_write_cycle[3][2];
 u32 time_start = 0;
 bool auto_off_timer_suspended = false;
@@ -1140,18 +1140,19 @@ void lk_dmg_cart_read_data(void) {
 	RAW_DMG_ADDR_DIR_OUT();
 	RAW_DMG_DATA_DIR_IN();
 	u16 left = _lk_var16[LK_VAR16_TRANSFER_SIZE];
+	uint8_t* chunk = data_buffer;
 	while (left > 0) {
 		u16 chunk_len = left > CHUNK_MAX_LEN ? CHUNK_MAX_LEN : left;
 
 		if (_lk_var8[LK_VAR8_DMG_READ_CS_PULSE] == true) { // SRAM
 			for (u32 x = 0; x < chunk_len; x++) {
-				data_buffer[x] = lk_dmg_cart_read_sram(_lk_var32[LK_VAR32_ADDRESS]++);
+				chunk[x] = lk_dmg_cart_read_sram(_lk_var32[LK_VAR32_ADDRESS]++);
 			}
 		} else if (_lk_var8[LK_VAR8_DMG_READ_METHOD] == LK_DMG_READ_METHOD_PULSE_A15) { // read ROM with A15 pulsing
 			for (u32 x = 0; x < chunk_len; x++) {
 				RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);
 				_delay_400ns();
-				data_buffer[x] = RAW_DMG_DATA_GET();
+				chunk[x] = RAW_DMG_DATA_GET();
 				PIN_ADDR_H(15);
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
@@ -1159,7 +1160,7 @@ void lk_dmg_cart_read_data(void) {
 			for (u32 x = 0; x < chunk_len; x++) {
 				RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);
 				_delay_dmg_slow_access();
-				data_buffer[x] = RAW_DMG_DATA_GET();
+				chunk[x] = RAW_DMG_DATA_GET();
 				PIN_ADDR_H(15);
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
@@ -1168,16 +1169,25 @@ void lk_dmg_cart_read_data(void) {
 				RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]++);
 				PIN_RD_L();
 				_delay_400ns();
-				data_buffer[x] = RAW_DMG_DATA_GET();
+				chunk[x] = RAW_DMG_DATA_GET();
 				PIN_RD_H();
 			}
 		}
-		LK_ASYNC_FLUSH(data_buffer, chunk_len);
 
-		lk_conn_send(data_buffer, chunk_len);
+		LK_ASYNC_ENQUEUE_RX(chunk, chunk_len);
+
+#if (!LK_ASYNC)
+		lk_conn_send(chunk, chunk_len);
+#endif
+
+		chunk += chunk_len;
 		left -= chunk_len;
 	}
 	PIN_RD_H();
+#if LK_ASYNC
+	LK_ASYNC_FLUSH(NULL, 0);
+	lk_conn_send(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
+#endif
 }
 void lk_dmg_mbc7_read_eeprom(void) {
 	for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 2) {
@@ -1875,6 +1885,8 @@ void lk_dmg_agb_flash_unbuffered(void) {
 			u16 base_address = _lk_var32[LK_VAR32_ADDRESS] & 0xFFFF;
 			u16 written = 0;
 
+			uint8_t* verify_chunk = verify_data_buffer;
+
 			for (u16 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
 				if (data_buffer[x] != 0xFF) {
 					written++;
@@ -1902,14 +1914,23 @@ void lk_dmg_agb_flash_unbuffered(void) {
 					lk_dmg_verify_data(_lk_var32[LK_VAR32_ADDRESS], data_buffer[x]);
 #else
 					LK_ASYNC_VERIFY_DATA(data_buffer[x]);
+					if ((written % 512) == 0) {
+						LK_ASYNC_ENQUEUE_RX(verify_chunk, 512);
+						verify_chunk += 512;
+					}
 #endif
 					if (_timeout_check()) break;
 				}
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
 #if LK_ASYNC
-			LK_ASYNC_FLUSH(verify_data_buffer, written);
+			const uint16_t remainder = (written % 512);
+			if (remainder) {
+				LK_ASYNC_ENQUEUE_RX(verify_chunk, remainder);
+			}
+			LK_ASYNC_FLUSH(NULL, 0);
 			u16 verify_i = 0;
+			dprint("Verifying total size %u in chunks of up to %u", _lk_var16[LK_VAR16_TRANSFER_SIZE], CHUNK_MAX_LEN);
 			for (u16 data_i = 0; data_i < _lk_var16[LK_VAR16_TRANSFER_SIZE]; data_i++) {
 				if (data_buffer[data_i] == 0xFF) continue;
 				if (data_buffer[data_i] != verify_data_buffer[verify_i]) {
@@ -2275,6 +2296,7 @@ u32 lk_dmg_agb_calc_crc32(u32 length) {
 		PIN_RD_L();
 		PIN_CLK_L(); // Pocket Camera needs this
 		RAW_DMG_ADDR_DIR_OUT();
+		uint8_t* chunk = data_buffer;
 		for (u32 chunk_begin = 0; chunk_begin < length; chunk_begin += CHUNK_MAX_LEN) {
 			u32 chunk_end = chunk_begin + CHUNK_MAX_LEN;
 			if (chunk_end > length) chunk_end = length;
@@ -2283,16 +2305,19 @@ u32 lk_dmg_agb_calc_crc32(u32 length) {
 			for (u32 x = 0; x < chunk_length; ++x) {
 				RAW_DMG_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);
 				_delay_400ns();
-				data_buffer[x] = RAW_DMG_DATA_GET();
+				chunk[x] = RAW_DMG_DATA_GET();
 				PIN_ADDR_H(15);
 				_lk_var32[LK_VAR32_ADDRESS]++;
 			}
-			LK_ASYNC_FLUSH(data_buffer, chunk_length);
-			for (u32 x = 0; x < chunk_length; x++) {
-				checksum = crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
-			}
+
+			LK_ASYNC_ENQUEUE_RX(chunk, chunk_length);
+			chunk += chunk_length;
 		}
 		PIN_RD_H();
+		LK_ASYNC_FLUSH(NULL, 0);
+		for (u32 x = 0; x < length; x++) {
+			checksum = crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
+		}
 	} else { // AGB mode
 		RAW_AGB_ADDR_DIR_OUT();
 		RAW_AGB_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);

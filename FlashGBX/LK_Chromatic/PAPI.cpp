@@ -117,8 +117,9 @@ private:
     const char* const _label;
 };
 
-ContiguousSPSCStream<8192> gPAPI_to_LK("PAPI-to-LK");
-ContiguousSPSCStream<8192> gLK_to_PAPI("LK-to-PAPI");;
+constexpr auto LargestDMGROM = 8 * 1024 * 1024;
+ContiguousSPSCStream<LargestDMGROM> gPAPI_to_LK("PAPI-to-LK");
+ContiguousSPSCStream<LargestDMGROM> gLK_to_PAPI("LK-to-PAPI");;
 
 #ifdef _WIN32
 [[nodiscard]]
@@ -179,10 +180,10 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
                             return;
                         }
                     }
-                    TraceLoggingThreadActivity<gTL> tla;
-                    TraceLoggingWriteStart(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
+                    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+                    SPAMMY(TraceLoggingWriteStart(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
                     mc_exec(cmd);
-                    TraceLoggingWriteStop(tla, "lk_loop()", TraceLoggingHexInt8(cmd, "cmd"));
+                    SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
                 }
             }
         }.detach();
