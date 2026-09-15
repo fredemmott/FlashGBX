@@ -13,13 +13,6 @@
 void lk_recv_from_host(uint8_t* data, uint16_t count);
 void lk_send_to_host(const uint8_t* data, uint16_t count);
 
-/* tx all, then rx all */
-void mc_exec_batch(
-  const uint8_t* txData,
-  size_t txCount,
-  uint8_t* rxData,
-  size_t rxCount);
-
 struct mc_transport_progress {
   size_t completed_this_transaction {};
   size_t completed_cumulative {};
@@ -35,7 +28,7 @@ struct mc_transport_callbacks {
 };
 
 void mc_transport_set_callbacks(const mc_transport_callbacks*);
-void mc_transport_poll();
+void mc_transport_flush();
 
 /* returns previous cumulative count */
 [[nodiscard]]

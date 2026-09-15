@@ -32,6 +32,8 @@ enum class Command : uint8_t {
     SetStatusRegisterMask = 11,
     SetStatusRegisterValue  = 12,
     GetStateBits = 13,
+
+    Flush = 14
 };
 
 enum class StateBits : uint8_t {
@@ -400,6 +402,9 @@ extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
 }
 
 void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
+    if (rxCount) {
+        push(Command::Flush);
+    }
     const auto txCount = _buffer.byte_count();
 
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
@@ -411,7 +416,7 @@ void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
     }
 
     // Limited by device-side TX buffer
-    if (rxCount> 4096) [[unlikely]] {
+    if (rxCount > 4096) [[unlikely]] {
         LogError("Can't flush more than 4096 bytes");
         abort();
     }
@@ -420,7 +425,10 @@ void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
         abort();
     }
 
-    mc_exec_batch(_buffer.data(), txCount, rxData, rxCount);
+
+    std::ignore = mc_transport_enqueue_tx(_buffer.data(), txCount);
+    std::ignore = mc_transport_enqueue_rx(rxData, rxCount);
+    mc_transport_flush();
 
     _buffer.clear();
 

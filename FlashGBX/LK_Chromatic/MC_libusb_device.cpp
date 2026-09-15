@@ -373,17 +373,11 @@ extern "C" size_t mc_transport_enqueue_rx(uint8_t* const data, const size_t coun
     return enqueue<Operation::RX>(data, count);
 }
 
-extern "C" void mc_exec_batch(
-    const uint8_t* const txData,
-    const size_t txCount,
-    uint8_t* const rxData,
-    const size_t rxCount) {
-    if (txCount) {
-        std::ignore = mc_transport_enqueue_tx(txData, txCount);
+extern "C" void mc_transport_flush() {
+    if (!transfers().tx.empty()) {
         std::ignore = transfers().tx.back().wait();
     }
-    if (rxCount) {
-        std::ignore = mc_transport_enqueue_rx(rxData, rxCount);
+    if (!transfers().rx.empty()) {
         std::ignore = transfers().rx.back().wait();
     }
 }

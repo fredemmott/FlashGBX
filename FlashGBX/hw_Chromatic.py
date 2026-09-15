@@ -35,6 +35,7 @@ NATIVE_PROGRESS_CALLBACK = ctypes.CFUNCTYPE(
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
     ID_PREFIX = b"fredemmott/CartIO\x00"
+    REQUIRED_FW_VERSION = "2026.09.15.0"
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
@@ -241,8 +242,8 @@ class GbxDevice(LK_Device):
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
             self.FW["hw_Chromatic/CartIO_usb_if"] = usb_interface
 
-            if self.FW["hw_Chromatic/fw_ver/CartIO"] != "2026.09.14.0":
-                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version")
+            if self.FW["hw_Chromatic/fw_ver/CartIO"] != self.REQUIRED_FW_VERSION:
+                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version (need v{self.REQUIRED_FW_VERSION})")
                 return False
             return True
 
