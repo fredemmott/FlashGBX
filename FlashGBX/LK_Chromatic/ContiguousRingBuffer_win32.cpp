@@ -12,15 +12,8 @@ ContiguousRingBuffer::ContiguousRingBuffer(const std::size_t minimumSize) {
   SYSTEM_INFO info {};
   GetSystemInfo(&info);
 
-  const auto addressSpaceSize = std::lcm<std::size_t>(
-      static_cast<std::size_t>(info.dwAllocationGranularity) * 2,
-      minimumSize * 2);
-  _size = addressSpaceSize / 2;
-
-  if (!std::has_single_bit(_size)) [[unlikely]] {
-    LogError("ContiguousRingBuffer size {} is not a power of two", _size);
-    abort();
-  }
+  _size = std::bit_ceil(std::max(info.dwAllocationGranularity, minimumSize));
+  const auto addressSpaceSize = _size * 2;
 
   // Get address space for the ring buffer...
   _buffer = static_cast<uint8_t*>(VirtualAlloc2(
@@ -31,6 +24,16 @@ ContiguousRingBuffer::ContiguousRingBuffer(const std::size_t minimumSize) {
       PAGE_NOACCESS,
       nullptr,
       0));
+  if (!_buffer) {
+    _size = 0;
+    LogError(
+      "VirtualAlloc2() failed for {:#010x}-byte placeholder: {:#010x}; {} bytes requested with allocation granularity of {}",
+      _size,
+      std::bit_cast<uint32_t>(HRESULT_FROM_WIN32(GetLastError())),
+      minimumSize,
+      info.dwAllocationGranularity);
+    return;
+  }
   // ... but split it in two by 'freeing' the already-not-allocated second half
   VirtualFree(_buffer + _size, _size, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER);
 
