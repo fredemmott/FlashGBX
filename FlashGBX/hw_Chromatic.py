@@ -174,9 +174,10 @@ class GbxDevice(LK_Device):
 
     # noinspection PyUnresolvedReferences
     def LoadFirmwareVersion(self):
-        dprint("Querying firmware version")
         if self.DEVICE is None: return False
         if not hasattr(self.DEVICE, "_haveFredEmmottMicrocode"):
+            dprint("Querying firmware version")
+
             match = self._query_firmware_version()
             if not match:
                 self._program_sram()
@@ -206,7 +207,6 @@ class GbxDevice(LK_Device):
 
             view = memoryview(device_id)
 
-            p = 0
             def consume(n: int):
                 nonlocal view
                 ret = view[:n]
@@ -221,7 +221,9 @@ class GbxDevice(LK_Device):
                 match = True
                 break
 
-            if not match: return False
+            if not match:
+                dprint(f"No matching section found in {len(view)} byte ID response")
+                return False
 
             # BCD
             year = consume(2).hex()
