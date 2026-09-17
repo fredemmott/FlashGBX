@@ -76,6 +76,7 @@ extern "C" int papi_fpga_program_sram(
   const PAPIStringCallback message_callback,
   const PAPIProgressCallback progress_callback)
 try {
+  dprint("papi_fpga_program_sram()");
 
   gMessageCallback = message_callback;
   gProgressCallback = progress_callback;
@@ -96,6 +97,7 @@ try {
   );
 
   op_message("Rebooting");
+  dprint("papi_fpga_program_sram() complete");
   return 1;
 } catch (const std::exception& e) {
   LogError("uncaught exception in papi_fpga_program_sram(): {}", e.what());
@@ -119,15 +121,12 @@ void printWarn(const std::string &warn, bool eol) {
   LogError("openFPGAloader WARNING: {}", warn);
 }
 void printInfo(const std::string &info, bool eol) {
-  dprint("openFPGAloader printInfo: {}", info);
 }
 void printSuccess(const std::string &success, bool eol) {
-  dprint("openFPGAloader printSuccess: {}", success);
 }
 
 ProgressBar::ProgressBar(const std::string &mess, int maxValue, int progressLen,
                          bool quiet) {
-  dprint("ProgressBar::ProgressBar() {} {}", mess, maxValue, quiet);
   op_message(mess);
   gProgressMax = maxValue;
   update_progress(0);
@@ -136,7 +135,6 @@ void ProgressBar::display(int value, char force) {
   update_progress(value);
 }
 void ProgressBar::done() {
-  dprint("ProgressBar::done()");
   update_progress(std::exchange(gProgressMax, 0));
 }
 void ProgressBar::fail() {

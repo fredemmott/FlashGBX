@@ -26,5 +26,6 @@ LK_CHROMATIC_EXPORT void papi_recv_from_lk_reset_input_buffer();
 LK_CHROMATIC_EXPORT uint16_t papi_recv_from_lk_pending_count();
 
 LK_CHROMATIC_EXPORT void papi_set_on_error_callback(PAPIStringCallback);
+LK_CHROMATIC_EXPORT void papi_set_on_debug_message_callback(PAPIStringCallback);
 
 }

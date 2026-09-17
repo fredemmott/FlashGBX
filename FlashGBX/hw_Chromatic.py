@@ -98,10 +98,15 @@ class GbxDevice(LK_Device):
         self._papi.papi_set_on_error_callback.argtypes = [NATIVE_STRING_CALLBACK]
         self._papi.papi_set_on_error_callback.restype = None
 
-        def cb(ptr, count) -> None:
-            self._lk_on_error(bytes(ptr[:count]))
-        self._lk_on_error_cb = NATIVE_STRING_CALLBACK(cb)
+        def on_error_callback(ptr, count) -> None:
+            self._on_native_error(bytes(ptr[:count]))
+        self._lk_on_error_cb = NATIVE_STRING_CALLBACK(on_error_callback)
         self._papi.papi_set_on_error_callback(self._lk_on_error_cb)
+        def on_debug_message_callback(ptr, count) -> None:
+            self._on_native_debug_message(bytes(ptr[:count]))
+        self._lk_on_debug_message_cb = NATIVE_STRING_CALLBACK(on_debug_message_callback)
+        self._papi.papi_set_on_debug_message_callback(self._lk_on_debug_message_cb)
+
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
@@ -112,9 +117,10 @@ class GbxDevice(LK_Device):
         reg_fn(c_cb)
         return c_cb
 
-    def _lk_on_error(self, data: bytes) -> None:
-        self.DEVICE.lk_on_error(data)
-        pass
+    def _on_native_error(self, data: bytes) -> None:
+        dprint(f"{ANSI.RED}ERROR: {data.decode('utf-8')}{ANSI.RESET}")
+    def _on_native_debug_message(self, data: bytes) -> None:
+        dprint(data.decode('utf-8'))
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected(): self.DEVICE.close()

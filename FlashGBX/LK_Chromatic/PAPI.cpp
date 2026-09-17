@@ -15,7 +15,14 @@ extern "C" {
 
 namespace {
 
-PAPIStringCallback PAPI_OnError = nullptr;
+struct callbacks_t {
+    PAPIStringCallback on_error { nullptr };
+    PAPIStringCallback on_debug_message { nullptr };
+};
+callbacks_t& callbacks() {
+    static callbacks_t callbacks;
+    return callbacks;
+}
 
 template<std::size_t N>
 requires (std::has_single_bit(N)) // must be power of two
@@ -232,29 +239,37 @@ extern "C" LK_CHROMATIC_EXPORT void papi_close() {
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(PAPIStringCallback cb) {
-    PAPI_OnError = cb;
+    callbacks().on_error = cb;
+}
+
+extern "C" LK_CHROMATIC_EXPORT void papi_set_on_debug_message_callback(PAPIStringCallback cb) {
+    callbacks().on_debug_message = cb;
 }
 
 extern "C" void mc_on_debug_message(const char* const str, const std::size_t length) {
+
+#ifdef _WIN32
     TraceLoggingWrite(gTL, "dprint", TraceLoggingCountedString(str, length, "message"));
 
     const auto ds = std::format("{}\n", std::string_view { str, length });
-#ifdef _WIN32
     OutputDebugStringA(ds.c_str());
 #endif
+
+    if (const auto cb = callbacks().on_debug_message) {
+        cb(str, length);
+    }
 }
 
 extern "C" void mc_on_error(const char* const str, const std::size_t length) {
+#ifdef _WIN32
     TraceLoggingWrite(gTL, "ERROR", TraceLoggingCountedString(str, length, "message"));
 
     const auto ds = std::format("ERROR: {}\n", std::string_view { str, length });
-#ifdef _WIN32
     OutputDebugStringA(ds.c_str());
 #endif
 
-    if (PAPI_OnError) {
-        const auto fgbx = std::format("LK-MC: {}\r\n", std::string_view { str, length });
-        PAPI_OnError(fgbx.c_str(), fgbx.length());
+    if (const auto cb = callbacks().on_error) {
+        cb(str, length);
     }
 }
 
