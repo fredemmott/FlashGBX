@@ -230,8 +230,13 @@ struct LibUSBDevice {
             libusb_release_interface(_device, *_interface);
         }
 
-        libusb_close(_device);
-        libusb_exit(_context);
+        if (_device) {
+            libusb_close(_device);
+        }
+
+        if (_context) {
+            libusb_exit(_context);
+        }
     }
 
     [[nodiscard]]
@@ -245,15 +250,9 @@ struct LibUSBDevice {
     }
 
     [[nodiscard]]
-    LibUSBTransfer makeWriteTransfer() {
-        return { _device, _context, _epOut };
+    bool valid() const noexcept {
+        return _context && _device && _interface;
     }
-
-    [[nodiscard]]
-    LibUSBTransfer makeReadTransfer() {
-        return { _device, _context, _epIn };
-    }
-
 private:
     static constexpr auto DefaultTimeout = LibUSBTransfer::DefaultTimeout;
 
@@ -377,12 +376,19 @@ extern "C" void mc_exec_batch(
 #endif
 }
 
-void mc_usb_open(
-  const uint16_t vendorID,
-  const uint16_t productID,
-  const uint8_t interfaceNumber) {
-  device().reset();
-  device().emplace(vendorID, productID, interfaceNumber);
+bool mc_usb_open(
+    const uint16_t vendorID,
+    const uint16_t productID,
+    const uint8_t interfaceNumber) {
+    auto& it = device();
+    it.reset();
+    it.emplace(vendorID, productID, interfaceNumber);
+    if (it->valid()) {
+        return true;
+    }
+
+    it.reset();
+    return false;
 }
 
 void mc_usb_close() {

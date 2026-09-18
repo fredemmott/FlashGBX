@@ -211,9 +211,14 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
 }
 
 
-extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber) {
+extern "C" LK_CHROMATIC_EXPORT papi_open_status papi_open(
+    const uint16_t vendorID,
+    const uint16_t productID,
+    const uint8_t interfaceNumber) {
     dprint("Attempting to open libusb device");
-    mc_usb_open(vendorID, productID, interfaceNumber);
+    if (!mc_usb_open(vendorID, productID, interfaceNumber)) {
+        return papi_open_status::OpenError;
+    }
 
     // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
     const auto cookie = GetPingCookie();
@@ -225,13 +230,16 @@ extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t produc
     mc_end_async_batch();
     if (actual != expected) {
         LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
-        return;
+        mc_usb_close();
+        return papi_open_status::PingError;
     }
     dprint("LK_Chromatic: Initial ping OK");
 
     std::ranges::fill(_lk_var8, 0);
     std::ranges::fill(_lk_var16, 0);
     std::ranges::fill(_lk_var32, 0);
+
+    return papi_open_status::Success;
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {

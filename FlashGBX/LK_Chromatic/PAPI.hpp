@@ -14,7 +14,13 @@ extern "C" {
 
 using PAPIStringCallback = void (*)(const char*, uint16_t);
 
-LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber);
+enum class papi_open_status: int {
+  Success = 0,
+  OpenError = -1,
+  PingError = -2,
+};
+
+LK_CHROMATIC_EXPORT papi_open_status papi_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber);
 LK_CHROMATIC_EXPORT void papi_close();
 
 LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t*, uint16_t);
