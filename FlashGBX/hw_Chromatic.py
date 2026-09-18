@@ -72,7 +72,7 @@ class GbxDevice(LK_Device):
         self._papi.papi_fpga_reset.restype = ctypes.c_int
 
         self._papi.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
-        self._papi.papi_open.restype = None
+        self._papi.papi_open.restype = ctypes.c_int
 
         self._papi.papi_close.argtypes = []
         self._papi.papi_close.restype = None
@@ -196,8 +196,7 @@ class GbxDevice(LK_Device):
                 self.FW = None
             if self.DEVICE is None:
                 return False
-            self._activate_cartridge_io_mode()
-            self.DEVICE._haveFredEmmottMicrocode = True
+            self.DEVICE._haveFredEmmottMicrocode = self._activate_cartridge_io_mode()
         return self.DEVICE._haveFredEmmottMicrocode
 
 
@@ -266,16 +265,20 @@ class GbxDevice(LK_Device):
                 pass
             return False
 
-    def _activate_cartridge_io_mode(self):
+    def _activate_cartridge_io_mode(self) -> bool:
         self._write(bytearray(b'fredemmott/CartIO\0')) # Switch mode
         time.sleep(0.10)
 
         self.DEVICE.__class__ = MicrocodeDevice
         cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._papi)
 
-        self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, self.FW["hw_Chromatic/CartIO_usb_if"])
+        status = self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, self.FW["hw_Chromatic/CartIO_usb_if"])
+        if status != 0:
+            dprint(f"{ANSI.RED}Failed to open device: {status}{ANSI.RESET}")
+            return False
 
-        self._query_lk_firmware_version()
+
+        return self._query_lk_firmware_version()
 
     def _program_sram(self) -> bool:
         app = None
@@ -347,7 +350,7 @@ class GbxDevice(LK_Device):
                 if app:
                     app.processEvents()
 
-    def _query_lk_firmware_version(self):
+    def _query_lk_firmware_version(self) -> bool:
         self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
         size = self._read(1)
         if size != 8: return False
