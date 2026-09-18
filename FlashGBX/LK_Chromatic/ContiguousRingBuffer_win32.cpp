@@ -12,7 +12,7 @@ ContiguousRingBuffer::ContiguousRingBuffer(const std::size_t minimumSize) {
   SYSTEM_INFO info {};
   GetSystemInfo(&info);
 
-  _size = std::bit_ceil(std::max(info.dwAllocationGranularity, minimumSize));
+  _size = std::bit_ceil(std::max<std::size_t>(info.dwAllocationGranularity, minimumSize));
   const auto addressSpaceSize = _size * 2;
 
   // Get address space for the ring buffer...
