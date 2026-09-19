@@ -307,7 +307,6 @@ class GbxDevice(LK_Device):
             dprint(f"{ANSI.RED}Failed to open device: {status}{ANSI.RESET}")
             return False
 
-
         return self._query_lk_firmware_version()
 
     def _program_sram(self) -> bool:
@@ -324,9 +323,9 @@ class GbxDevice(LK_Device):
                 for window in pyside.QtGui.QGuiApplication.topLevelWindows():
                     widget = pyside.QtWidgets.QWidget.find(window.winId())
                     if hasattr(widget, "lblDevice"):
-                        def gui_progress(label, s:str) -> None:
+                        def gui_message(label, s:str) -> None:
                             label.setText(s)
-                        message = lambda s, l = widget.lblDevice: gui_progress(l, s)
+                        message = lambda s, l = widget.lblDevice: gui_message(l, s)
                         orig_progress = widget.lblDevice.text()
                     if hasattr(widget, "SetProgressBars") and hasattr(widget, "prgStatus"):
                         progress = lambda value, max_value, w = widget: (w.SetProgressBars(0, max_value, value), w.prgStatus.repaint())
@@ -339,9 +338,13 @@ class GbxDevice(LK_Device):
             message(s)
             if app:
                 app.processEvents()
+        def progress_callback(value: int, max_value: int) -> None:
+            progress(value, max_value)
+            if app:
+                app.processEvents()
 
         native_message = NATIVE_STRING_CALLBACK(message_callback)
-        native_progress = NATIVE_PROGRESS_CALLBACK(progress)
+        native_progress = NATIVE_PROGRESS_CALLBACK(progress_callback)
 
         try:
             self.DEVICE.close()
