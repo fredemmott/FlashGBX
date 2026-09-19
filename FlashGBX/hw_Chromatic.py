@@ -35,7 +35,7 @@ NATIVE_PROGRESS_CALLBACK = ctypes.CFUNCTYPE(
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
     ID_PREFIX = b"fredemmott/CartIO\x00"
-    REQUIRED_FW_VERSION = "2026.09.19.0"
+    REQUIRED_FW_VERSION = "2026.09.19.1"
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101

@@ -1,15 +1,34 @@
 Param(
   [Parameter(Mandatory)]
-  [string]$Version
+  [string]$Version,
+  [switch]$NoSign
 )
 
 $ISCC = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-$deps = @('7z', $ISCC) | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
-if ($deps) {
+$GWU2XPattern = "C:\Gowin\Gowin_*\Programmer\driver\GowinUSBCableDriverV5_for_win7+.exe"
+$Inf2Cat = ""
+
+$GWU2X = (Resolve-Path $GWU2XPattern)
+if (-not $GWU2X) {
+    $GWU2X = $GWU2XPattern
+}
+
+$WindowsKits = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
+if (Test-Path $WindowsKits) {
+    $KitsRoot = (Get-ItemProperty -Path $WindowsKits).KitsRoot10
+    if (Test-Path $KitsRoot) {
+        $Inf2Cat = (Resolve-Path "$KitsRoot\bin\10.0.*\x86\Inf2Cat.exe") | Select-Object -First 1
+    }
+}
+if (-not $Inf2Cat) {
+    $Inf2Cat = "Inf2Cat.exe"
+}
+
+$missing = @('7z', $ISCC, $GWU2X, $Inf2Cat) | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
+if ($missing) {
     Write-Error "Missing required tools: $($missing -join ', ')"
     exit 1
 }
-
 
 ##### 1. Build FlashGBX #####
 
@@ -78,11 +97,21 @@ Copy-Item cache\embedded-python output\Python -Recurse -Exclude "*.cpp","*.hpp",
 # Keep the debug symbols for the DLL
 Copy-Item cache\embedded-python\Lib\site-packages\FlashGBX\_LK_Chromatic.pdb artifacts\
 
+##### build cat for Chromatic driver inf #####
+New-Item -ItemType Directory -Force -Path output\Drivers\chromatic_cartio
+Copy-Item release-scripts/chromatic_cartio.inf output\Drivers\chromatic_cartio
+& $Inf2Cat /driver:output\Drivers\chromatic_cartio\ /os:10_x64
+
 ##### 4. Sign FlashGBX binaries #####
-Write-Host "Signing FlashGBX.exe and _LK_Chromatic.dll"
-signtool sign /fd sha256 /tr http://ts.ssl.com /td sha256 /a `
-  output\FlashGBX.exe `
-  output\Python\Lib\site-packages\FlashGBX\_LK_Chromatic.dll
+if ($NoSign) {
+    Write-Host "----- SKIPPING SIGNTOOL -----"
+} else {
+    Write-Host "Signing FlashGBX.exe, _LK_Chromatic.dll, and chromatic_cartio.cat"
+    signtool sign /fd sha256 /tr http://ts.ssl.com /td sha256 /a `
+        output\FlashGBX.exe `
+        output\Python\Lib\site-packages\FlashGBX\_LK_Chromatic.dll `
+        output\Drivers\chromatic_cartio\chromatic_cartio.cat
+}
 
 ##### 5. Build zip #####
 7z a -tzip -mx=9 "artifacts\FlashGBX-$($Version.Replace('+','_'))_Windows-x64.zip" ".\output\*"
@@ -122,6 +151,7 @@ $resolvedSetupDir = (Resolve-Path setup).Path
     -replace '<APP_VERSION>', "$Version" `
     -replace '<FILES_DIR>', "$resolvedOutputDir" `
     -replace '<CH341_DIR>', "$resolvedCh341Dir" `
+    -replace '<GWU2X_PATH>', "$GWU2X" `
     -replace '<OUTPUT_DIR>', "$resolvedSetupDir" | Set-Content "setup.iss"
 
 $filesToCopy = @("CHANGES.md", "README.md", "LICENSE", "Third Party Notices.md")
@@ -148,7 +178,11 @@ if (Test-Path $rawSetupExe) {
     Move-Item $rawSetupExe $finalSetupExePath -Force
 }
 
-echo "Signing setup..."
-signtool sign /fd sha256 /tr http://ts.ssl.com /td sha256 /a $finalSetupExePath
+if ($NoSign) {
+    Write-Host "----- SKIPPING SIGNTOOL -----"
+} else {
+    Write-Host "Signing setup..."
+    signtool sign /fd sha256 /tr http://ts.ssl.com /td sha256 /a $finalSetupExePath
+}
 
 7z a -tzip -mx=3 "artifacts/FlashGBX-$($Version.Replace('+','_'))_Windows-x64_Setup.zip" ".\setup\*"

@@ -8,6 +8,7 @@
 #define MyAppExeName "FlashGBX-app.exe"
 #define MyFilesDir "<FILES_DIR>"
 #define MyCH341Dir "<CH341_DIR>"
+#define MyGWU2XPath "<GWU2X_PATH>"
 #define MyOutputDir "<OUTPUT_DIR>"
 
 [Setup]
@@ -31,7 +32,7 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\FlashGBX-app.exe
 UninstallDisplayName={#MyAppName} v{#MyAppVersion}
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
@@ -45,6 +46,8 @@ Name: "custom"; Description: "Custom Installation"; Flags: iscustom
 [Components]
 Name: "program"; Description: "FlashGBX application"; Types: full custom; Flags: fixed
 Name: "driver_ch341"; Description: "CH340/CH341 driver v3.9.2024.09 for GBxCart RW and GBFlash (install/re-install)"; Types: full
+Name: "driver_gwu2x"; Description: "GWU2X FPGA driver for ModRetro Chromatic (install/reinstall)"; Types: full
+Name: "driver_chromatic_cartio"; Description: "Cartridge IO driver for ModRetro Chromatic (install/reinstall)"; Types: full
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -52,6 +55,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#MyFilesDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: program
 Source: "{#MyCH341Dir}\*.*"; DestDir: "{app}\Drivers\CH341"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: driver_ch341
+Source: "{#MyGWU2XPath}"; DestDir: "{app}\Drivers";Flags: ignoreversion recursesubdirs createallsubdirs; Components: driver_gwu2x
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
@@ -60,7 +64,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\Drivers\CH341\CH341SER.EXE"; Description: "Install CH340/CH341 driver"; Flags: waituntilterminated; Components: driver_ch341
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Drivers\GowinUSBCableDriverV5_for_win7+.exe"; Description: "Install GWU2X driver"; Flags: waituntilterminated; Components: driver_gwu2x
+Filename: "{sysnative}\pnputil.exe"; Parameters: "/add-driver ""{app}\Drivers\chromatic_cartio\chromatic_cartio.inf"" /install"; Flags: waituntilterminated; Components: driver_chromatic_cartio
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\Python";
