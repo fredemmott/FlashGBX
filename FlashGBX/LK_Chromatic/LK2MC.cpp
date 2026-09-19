@@ -19,19 +19,21 @@ namespace {
 enum class Command : uint8_t {
     NOP = 0,
     Ping = 1,
+    Delay = 2,
+    Flush = 3,
 
-    SetAddressMSB = 2,
-    SetAddressLSB = 3,
-    SetOutputEnable = 4,
-    SetData = 5,
-    GetData = 6,
-    SetPinsA = 7,
-    SetPinsB = 8,
-    VerifyData = 9,
-    VerifyStatusRegister = 10,
-    SetStatusRegisterMask = 11,
-    SetStatusRegisterValue  = 12,
-    GetStateBits = 13,
+    SetAddressMSB = 4,
+    SetAddressLSB = 5,
+    SetOutputEnable = 6,
+    SetData = 7,
+    GetData = 8,
+    SetPinsA = 9,
+    SetPinsB = 10,
+    VerifyData = 11,
+    VerifyStatusRegister = 12,
+    SetStatusRegisterMask = 13,
+    SetStatusRegisterValue = 14,
+    GetStateBits = 15,
 };
 
 enum class StateBits : uint8_t {
@@ -69,14 +71,19 @@ constexpr bool ProducesRX(const Command cmd) noexcept {
 
 struct CommandBuffer {
     CommandBuffer(const CommandBuffer&) = delete;
-    CommandBuffer(CommandBuffer&&) = delete;
     CommandBuffer& operator=(const CommandBuffer&) = delete;
-    CommandBuffer& operator=(CommandBuffer&&) = delete;
+    CommandBuffer(CommandBuffer&& other) noexcept { this->moveFrom(std::move(other)); }
+    CommandBuffer& operator=(CommandBuffer&& other) noexcept {
+        this->moveFrom(std::move(other));
+        return *this;
+    }
 
-    CommandBuffer() {
-        constexpr std::size_t InitialSize = 65536;
-        _begin = _end = static_cast<uint8_t*>(std::malloc(InitialSize));
-        _capacity = InitialSize;
+    explicit CommandBuffer(const std::size_t initialCapacity) {
+        _begin = _end = static_cast<uint8_t*>(std::malloc(initialCapacity));
+        _capacity = initialCapacity;
+    }
+
+    CommandBuffer() : CommandBuffer(65536) {
     }
 
     ~CommandBuffer() {
@@ -91,6 +98,17 @@ struct CommandBuffer {
         _end[1] = arg8;
 
         _end += BytesPerCommand;
+    }
+
+    [[nodiscard]]
+    std::size_t capacity() const noexcept {
+        return _capacity;
+    }
+
+    void reset(const std::size_t capacity) {
+        std::free(_begin);
+        _begin = _end = static_cast<uint8_t*>(std::malloc(capacity));
+        _capacity = capacity;
     }
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
@@ -138,6 +156,13 @@ private:
             _end = _begin + s;
         }
     }
+
+    void moveFrom(CommandBuffer&& other) {
+        std::free(_begin);
+        _begin = std::exchange(other._begin, nullptr);
+        _end = std::exchange(other._end, nullptr);
+        _capacity = std::exchange(other._capacity, 0);
+    }
 };
 
 struct CommandQueue {
@@ -176,37 +201,23 @@ struct CommandQueue {
             abort();
         }
 
-        if (const auto unflushed = std::exchange(_expectedRX, 0); unflushed != 0) [[unlikely]] {
-            LogError("CommandQueue::end() called with {} expected RX bytes; call flush() first", unflushed);
-            abort();
-        }
-
-        if (_buffer.byte_count() == 0) {
-            return;
-        }
-        flush(nullptr, 0);
-        _buffer.clear();
+        LK_ASYNC_FLUSH(nullptr, 0);
     }
 
     void push(const Command cmd, const uint8_t arg = 0x00) {
         _buffer.push(cmd, arg);
-
         if (ProducesRX(cmd)) {
-            _expectedRX++;
-            SUPER_SPAMMY(TraceLoggingWrite(gTL, "push()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(cmd), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+            _producesRX = true;
         }
     }
 
     template<std::invocable<uint8_t*, std::size_t> Fn>
     void pushBytes(const std::size_t count, Fn&& fn) {
-        const auto base = _buffer.byte_count();
+        const auto offset = byte_count();
         _buffer.pushBytes(count, std::forward<Fn>(fn));
-        const auto begin = _buffer.data() + base;
-        const auto end = begin + count;
-        for (auto it = begin; it < end; it += BytesPerCommand) {
-          if (ProducesRX(static_cast<Command>(*it))) {
-                _expectedRX++;
-                SUPER_SPAMMY(TraceLoggingWrite(gTL, "pushBytes()/_expectedRX++", TraceLoggingHexInt8(std::to_underlying(*it), "MC"), TraceLoggingValue(_expectedRX, "newValue")));
+        for (auto it = begin() + offset; it != end(); it += BytesPerCommand) {
+            if (ProducesRX(static_cast<Command>(*it))) {
+                _producesRX = true;
             }
         }
     }
@@ -226,81 +237,102 @@ struct CommandQueue {
     }
 
 
-    void flush(uint8_t* rxData, uint16_t rxCount);
+    void flush();
 
-    [[nodiscard]] std::size_t byte_count() const { return _buffer.byte_count(); }
+    [[nodiscard]] std::size_t byte_count() const noexcept { return _buffer.byte_count(); }
+
+    [[nodiscard]] bool empty() const noexcept { return byte_count() == 0; }
 
     static CommandQueue& get() {
         static CommandQueue instance {};
         return instance;
     }
 
+    void on_tx_progress(const mc_transport_progress& p) {
+        while ((!_busy.empty()) && _busy.front().fence <= p.completed_cumulative) {
+            _busy.pop_front();
+        }
+    }
 private:
+    struct SubmittedBuffer {
+        CommandBuffer buffer {0};
+        std::size_t fence {};
+    };
+
     CommandBuffer _buffer {};
+
     bool _enabled { false };
-    std::size_t _expectedRX {};
+    bool _producesRX { false };
+
+    std::list<SubmittedBuffer> _busy;
 
     CommandQueue() = default;
 };
 
-template<std::unsigned_integral T>
-constexpr T HundredsOfNSToNOPCount(const T count) {
+void tx_progress_callback(
+    [[maybe_unused]] void* user_data,
+    const mc_transport_progress* p) {
+    CommandQueue::get().on_tx_progress(*p);
+}
+
+constexpr uint8_t HundredsOfNSToDelayArg(const uint8_t hundredsOfNS) {
     // The microcode is executed using the USB clock as the execution
     // clock - so byte count == tick count.
     //
     // Our clock interval is 16.6667ns, so 100ns is 6 ticks. Our
     // commands are currently 2 bytes == 2 ticks, so 33.333ns.
     //
-    // If we have `foo(); NOP(); bar();` though, we have a 4 tick delay
-    // between `foo()` and `bar()`:
+    // If we have `foo(); bar(); baz();` though, we have a 4 tick delay
+    // between `foo()` and `baz()`:
     //
-    //     foo(); NOP(); bar();
+    //     foo(); bar(); baz();
     //     |------| 2 bytes = 2 ticks
     //            |------| 2 bytes = 2 ticks
     //     |-------------| 4 bytes = 4 ticks
     //
-    // ... and each additional NOP gets us another 2 ticks:
+    // So, even `delay(0)` gets 33.3333ns just by virtue of being a command
+    // and arg (with BytesPerCommand = 2)
     //
-    //     foo(); NOP(); NOP(); bar();
-    //     |------|      |------|
-    //            |------|
-    //     |--------------------| 6 bytes = 6 ticks
+    // Incrementing the argument gets us an extra 16.6667ns
     //
-    // So, for the first 100ns, we need two NOPs(), but after that, we need
-    // three NOPs per 100ns.
+    // So, for 100ns, we want a delay of (100 - 33.333) / 16.6667 = 4
+    //         200ns                     (200 - 33.333) / 16.6667 = 10
+    //         ...                       ...                      = ...
     //
-    // For 2 bytes per command, that gets us:
+    // given `n` is hundreds of NS, that is:
     //
-    //     (3 * count - 1)) + 2
-    //
-    // Let's generalize that:
-    static constexpr auto TicksPerCommand = BytesPerCommand;
-    // 2x for the interval between `foo()` and `bar()` in `foo(); NOP(); bar();`
-    static constexpr auto FirstNOPTicks = 2 * TicksPerCommand;
-    // 6x because 16.667ns tick rate = 100ns/6
-    const auto requiredTicks = 6 * count;
-    return 1 + ((requiredTicks - FirstNOPTicks) / TicksPerCommand);
+    //     (100n - (100 / 3)) / (100 / 6)
+    //     ...  (n - (1 / 3)) / (1 / 6)
+    //     ...  (6n - 2)
+    static_assert(BytesPerCommand == 2);
+    return (6 * hundredsOfNS) - 2;
+}
+// We want to maximize n where
+//   (6n - 2) <= 255
+//   ... 6n <= 257
+//   ... n <= 257 / 6
+//   ... n <= 42.8333
+// So with int math, n = 42
+constexpr auto MaxHundredsOfNSDelay = 42;
+
+struct output_enable_state_t {
+    std::optional<bool> audio;
+    std::optional<bool> data;
+    std::optional<bool> address;
 };
 
-template<std::unsigned_integral T>
-void PushNOPs(const T count) {
-    if (count == 0) {
-        return;
-    }
-
-    CommandQueue::get().pushBytes(count * BytesPerCommand, [] (auto* p, const auto byteCount){
-        // Argument is ignored, so we might as well fill it with NOPs as well :)
-        std::memset(p, std::to_underlying(Command::NOP), byteCount);
-    });
+output_enable_state_t& output_enable_state() {
+    static output_enable_state_t state;
+    return state;
 }
 
 } // namespace
 
 extern "C" uint8_t LK2MC_ping(const uint8_t cookie) {
-    auto& cq = CommandQueue::get();
-    cq.push(Command::Ping, cookie);
+    CommandQueue::get().push(Command::Ping, cookie);
     uint8_t ret {};
-    cq.flush(&ret, 1);
+    LK_ASYNC_ENQUEUE_RX(&ret, 1);
+    LK_ASYNC_FLUSH(nullptr, 0);
     return ret;
 }
 
@@ -344,7 +376,7 @@ extern "C" uint8_t LK2MC_verify_status_register_flush(uint8_t* const buffer, con
     const auto mask = _lk_var16[LK_VAR16_STATUS_REGISTER_MASK];
     const auto value = _lk_var16[LK_VAR16_STATUS_REGISTER_VALUE];
 
-    CommandQueue::get().flush(buffer, count);
+    LK_ASYNC_FLUSH(buffer, count);
     const auto begin = buffer;
     const auto end = buffer + count;
 
@@ -395,36 +427,35 @@ extern "C" void LK2MC_set_variable(const uint8_t size, const uint32_t key, const
     }
 }
 
-extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
-    CommandQueue::get().flush(data, len);
-}
-
-void CommandQueue::flush(uint8_t* const rxData, const uint16_t rxCount) {
-    const auto txCount = _buffer.byte_count();
-
-    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
-    SPAMMY(TraceLoggingWriteStart(tla, "CommandQueue::flush()", TraceLoggingValue(txCount, "txCount"), TraceLoggingValue(rxCount, "rxCount")));
-
-    if ((txCount == 0) && (rxCount == 0)) {
-        SPAMMY(TraceLoggingWriteStop(tla, "CommandQueue::flush()", TraceLoggingValue("noop", "result")));
+extern "C" void LK2MC_enqueue_rx(uint8_t* const data, const uint16_t len) {
+    if (!(data && len)) {
         return;
     }
+    std::memset(data, 0xA0, len); // arbitrary marker
+    CommandQueue::get().flush();
+    std::ignore = mc_transport_enqueue_rx(data, len);
+}
 
-    // Limited by device-side TX buffer
-    if (rxCount> 4096) [[unlikely]] {
-        LogError("Can't flush more than 4096 bytes");
-        abort();
+extern "C" void LK2MC_flush(uint8_t* const data, const uint16_t len) {
+    CommandQueue::get().flush();
+    LK_ASYNC_ENQUEUE_RX(data, len);
+    mc_transport_flush();
+}
+
+void CommandQueue::flush() {
+    if (empty()) {
+        return;
     }
-    if (const auto unflushed = std::exchange(_expectedRX, 0); unflushed != rxCount) [[unlikely]] {
-        LogError("Expected to flush {} RX bytes, asked for {}", unflushed, rxCount);
-        abort();
+    if (std::exchange(_producesRX, false)) {
+        push(Command::Flush);
     }
+    const auto txCount = _buffer.byte_count();
 
-    mc_exec_batch(_buffer.data(), txCount, rxData, rxCount);
+    const auto finishedAt = mc_transport_enqueue_tx(_buffer.data(), txCount);
 
-    _buffer.clear();
-
-    SPAMMY(TraceLoggingWriteStop(tla, "CommandQueue::flush()", TraceLoggingValue("OK", "result")));
+    const auto capacity = _buffer.capacity();
+    _busy.emplace_back(std::move(_buffer), finishedAt);
+    _buffer.reset(capacity);
 }
 
 extern "C" uint32_t LK2MC_TIMESTAMP_NOW() {
@@ -449,8 +480,7 @@ extern "C" void LK2MC_DELAY_100NS(const uint8_t count) {
         return;
     }
 
-    const auto nopCount = HundredsOfNSToNOPCount(count);
-    PushNOPs(nopCount);
+    CommandQueue::get().push(Command::Delay, HundredsOfNSToDelayArg(count));
 }
 
 extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
@@ -458,8 +488,17 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
         return;
     }
 
-    const auto nopCount = HundredsOfNSToNOPCount(static_cast<uint64_t>(duration) * 10);
-    PushNOPs(nopCount);
+    const auto hundredsOfNS = static_cast<uint64_t>(duration) * 10;
+    const auto completeDelays = hundredsOfNS / MaxHundredsOfNSDelay;
+    const auto remainder = hundredsOfNS % MaxHundredsOfNSDelay;
+
+    auto& cq = CommandQueue::get();
+    for (int i = 0; i < completeDelays; ++i) {
+        cq.push(Command::Delay, MaxHundredsOfNSDelay);
+    }
+    if (remainder) {
+        cq.push(Command::Delay, HundredsOfNSToDelayArg(remainder));
+    }
 }
 
 extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
@@ -467,7 +506,8 @@ extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
     cq.push(Command::GetStateBits);
 
     uint8_t value;
-    cq.flush(&value, 1);
+    LK_ASYNC_ENQUEUE_RX(&value, 1);
+    LK_ASYNC_FLUSH(nullptr, 0);
 
     static constexpr auto cmp = std::to_underlying(StateBits::CartPresent);
     return (value & cmp) == cmp;
@@ -513,7 +553,31 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     }
 }
 
-extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe) {
+extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe_uint) {
+    const auto oe = static_cast<bool>(oe_uint);
+    switch (tristate_pin) {
+    case TRISTATE_AUDIO:
+        if (output_enable_state().audio == oe) {
+            return;
+        }
+        output_enable_state().audio = oe;
+        break;
+    case TRISTATE_DATA:
+        if (output_enable_state().data == oe) {
+            return;
+        }
+        output_enable_state().data = oe;
+        break;
+    case TRISTATE_ADDRESS:
+        if (output_enable_state().address == oe) {
+            return;
+        }
+        output_enable_state().address = oe;
+        break;
+    default:
+        break;
+    }
+
     auto& cq = CommandQueue::get();
     const auto data_in_delays =
         (tristate_pin == TRISTATE_DATA)
@@ -553,20 +617,36 @@ extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
     CommandQueue::get().push(Command::SetData, data);
 }
 
-extern "C" void mc_begin_async_batch() {
-    CommandQueue::get().start_batch();
+extern "C" void mc_exec(const uint8_t command) {
+    auto& cq = CommandQueue::get();
+    cq.start_batch();
+    lk_loop(command);
+    cq.end_batch();
 }
 
-extern "C" void mc_end_async_batch() {
-    CommandQueue::get().end_batch();
+extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
+    return LK2MC_ping(cookie);
+}
+
+extern "C" void mc_init() {
+    const mc_transport_callbacks callbacks {
+        .on_tx_progress = &tx_progress_callback,
+    };
+    mc_transport_set_callbacks(&callbacks);
+
+    output_enable_state() = {};
+}
+
+extern "C" void mc_reset() {
+    mc_transport_set_callbacks(nullptr);
 }
 
 extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {
-    CommandQueue::get().flush(nullptr, 0);
+    LK_ASYNC_FLUSH(nullptr, 0);
     lk_recv_from_host(data, count);
 }
 
 extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t count) {
-    CommandQueue::get().flush(nullptr, 0);
+    LK_ASYNC_FLUSH(nullptr, 0);
     lk_send_to_host(data, count);
 }

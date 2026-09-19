@@ -35,13 +35,15 @@ NATIVE_PROGRESS_CALLBACK = ctypes.CFUNCTYPE(
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
     ID_PREFIX = b"fredemmott/CartIO\x00"
+    REQUIRED_FW_VERSION = "2026.09.19.0"
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
 
-    MAX_BUFFER_READ = 4096
-    # Also limited by the TX buffer, for VerifyData calls
-    MAX_BUFFER_WRITE = 4096
+    # - Align with 512-byte USB packet sizes
+    # - Fit in a uint16 as the LK protocol requires it
+    MAX_BUFFER_READ = 0x10000 - 512
+    MAX_BUFFER_WRITE = MAX_BUFFER_READ
 
     _c_callbacks = []
 
@@ -241,8 +243,8 @@ class GbxDevice(LK_Device):
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
             self.FW["hw_Chromatic/CartIO_usb_if"] = usb_interface
 
-            if self.FW["hw_Chromatic/fw_ver/CartIO"] != "2026.09.14.0":
-                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version")
+            if self.FW["hw_Chromatic/fw_ver/CartIO"] != self.REQUIRED_FW_VERSION:
+                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version (need v{self.REQUIRED_FW_VERSION})")
                 return False
             return True
 

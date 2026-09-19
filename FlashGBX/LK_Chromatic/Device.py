@@ -65,6 +65,13 @@ class Device(serial.Serial):
 
     def close(self):
         self._papi.papi_close()
+
+        # Doing this explicitly reconnects the MCU and FPGA via UART
+        # These easiest way to test this is to see if the DPAD buttons
+        # work in the menu
+        self.rts = False
+        self.dtr = False
+
         super().close()
 
     def read(self, size = 1) -> bytearray:

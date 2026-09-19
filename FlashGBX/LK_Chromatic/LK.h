@@ -180,9 +180,8 @@ extern u8 _lk_bankcmd_num;
 extern u32 _lk_bankcmd_addr[3];
 extern u8 _lk_bankcmd_mode[3];
 
-// Previously in LK_Device.h
-#define CHUNK_MAX_LEN 4096
-extern u8 data_buffer[CHUNK_MAX_LEN];
+#define BUFFER_LEN 0x10000
+extern u8 data_buffer[BUFFER_LEN];
 extern u16 flash_write_cycle[3][2];
 extern u32 time_start;
 extern bool auto_off_timer_suspended;

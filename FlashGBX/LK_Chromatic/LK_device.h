@@ -35,6 +35,7 @@ uint8_t LK2MC_ping(uint8_t);
 void LK2MC_verify_data(uint8_t expected);
 void LK2MC_set_variable(uint8_t size, uint32_t key, uint32_t value);
 void LK2MC_dprint(const char*, va_list);
+void LK2MC_enqueue_rx(uint8_t* data, uint16_t len);
 void LK2MC_flush(uint8_t* data, uint16_t len);
 
 /* This is a smell as it breaks the abstraction, but given different flash
@@ -52,7 +53,7 @@ uint8_t LK2MC_verify_status_register_flush(uint8_t* buffer, uint32_t count);
 
 #define LK_DEVICE_PING(COOKIE) LK2MC_ping(COOKIE)
 #define LK_DEVICE_ON_SET_VARIABLE(SIZE, KEY, VALUE) LK2MC_set_variable(SIZE, KEY, VALUE)
-
+#define LK_ASYNC_ENQUEUE_RX(DATA, LEN) LK2MC_enqueue_rx(DATA, LEN)
 #define LK_ASYNC_FLUSH(DATA, LEN) LK2MC_flush(DATA, LEN)
 #define LK_ASYNC_VERIFY_DATA(COMP) LK2MC_verify_data(COMP)
 #define LK_ASYNC_VERIFY_STATUS_REGISTER() LK2MC_verify_status_register()
@@ -164,7 +165,7 @@ uint8_t LK2MC_CART_PRESENCE_SWITCH_GET();
 // #define CART_MODE_SWITCH_GET()				() // 0 = AGB, 1 = DMG
 
 // Moved to LK.h so it can affect the size of data_buffer
-//#define CHUNK_MAX_LEN						4096
+#define CHUNK_MAX_LEN 4096
 
 
 // GB/GBC
