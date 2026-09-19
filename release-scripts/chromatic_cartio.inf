@@ -1,0 +1,34 @@
+[Version]
+Signature   = "$Windows NT$"
+Class       = USBDevice
+ClassGUID   = {88BAE032-5A81-49f0-BC3D-A4FF138216D6}
+Provider    = %ManufacturerName%
+CatalogFile = chromatic_cartio.cat
+DriverVer   = 09/19/2026,1.0.0.0
+
+[Manufacturer]
+%ManufacturerName% = DeviceList, NTamd64, NTarm64
+
+[DeviceList.NTamd64]
+%DeviceName% = USB_Install, USB\VID_374E&PID_0101&MI_06
+
+[DeviceList.NTarm64]
+%DeviceName% = USB_Install, USB\VID_374E&PID_0101&MI_06
+
+[USB_Install]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[USB_Install.Services]
+Include = winusb.inf
+Needs   = WINUSB.NT.Services
+
+[USB_Install.HW]
+AddReg = Dev_AddReg
+
+[Dev_AddReg]
+HKR,,DeviceInterfaceGUIDs,0x10000,"{4aefd4e2-a2be-40fb-9392-1edbd7359e22}"
+
+[Strings]
+ManufacturerName = "Fred Emmott Software Services LLC"
+DeviceName       = "Cartridge IO (fredemmott)"
