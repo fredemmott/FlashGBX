@@ -19,21 +19,21 @@ namespace {
 enum class Command : uint8_t {
     NOP = 0,
     Ping = 1,
+    Delay = 2,
+    Flush = 3,
 
-    SetAddressMSB = 2,
-    SetAddressLSB = 3,
-    SetOutputEnable = 4,
-    SetData = 5,
-    GetData = 6,
-    SetPinsA = 7,
-    SetPinsB = 8,
-    VerifyData = 9,
-    VerifyStatusRegister = 10,
-    SetStatusRegisterMask = 11,
-    SetStatusRegisterValue  = 12,
-    GetStateBits = 13,
-
-    Flush = 14
+    SetAddressMSB = 4,
+    SetAddressLSB = 5,
+    SetOutputEnable = 6,
+    SetData = 7,
+    GetData = 8,
+    SetPinsA = 9,
+    SetPinsB = 10,
+    VerifyData = 11,
+    VerifyStatusRegister = 12,
+    SetStatusRegisterMask = 13,
+    SetStatusRegisterValue = 14,
+    GetStateBits = 15,
 };
 
 enum class StateBits : uint8_t {
@@ -275,56 +275,45 @@ void tx_progress_callback(
     CommandQueue::get().on_tx_progress(*p);
 }
 
-template<std::unsigned_integral T>
-constexpr T HundredsOfNSToNOPCount(const T count) {
+constexpr uint8_t HundredsOfNSToDelayArg(const uint8_t hundredsOfNS) {
     // The microcode is executed using the USB clock as the execution
     // clock - so byte count == tick count.
     //
     // Our clock interval is 16.6667ns, so 100ns is 6 ticks. Our
     // commands are currently 2 bytes == 2 ticks, so 33.333ns.
     //
-    // If we have `foo(); NOP(); bar();` though, we have a 4 tick delay
-    // between `foo()` and `bar()`:
+    // If we have `foo(); bar(); baz();` though, we have a 4 tick delay
+    // between `foo()` and `baz()`:
     //
-    //     foo(); NOP(); bar();
+    //     foo(); bar(); baz();
     //     |------| 2 bytes = 2 ticks
     //            |------| 2 bytes = 2 ticks
     //     |-------------| 4 bytes = 4 ticks
     //
-    // ... and each additional NOP gets us another 2 ticks:
+    // So, even `delay(0)` gets 33.3333ns just by virtue of being a command
+    // and arg (with BytesPerCommand = 2)
     //
-    //     foo(); NOP(); NOP(); bar();
-    //     |------|      |------|
-    //            |------|
-    //     |--------------------| 6 bytes = 6 ticks
+    // Incrementing the argument gets us an extra 16.6667ns
     //
-    // So, for the first 100ns, we need two NOPs(), but after that, we need
-    // three NOPs per 100ns.
+    // So, for 100ns, we want a delay of (100 - 33.333) / 16.6667 = 4
+    //         200ns                     (200 - 33.333) / 16.6667 = 10
+    //         ...                       ...                      = ...
     //
-    // For 2 bytes per command, that gets us:
+    // given `n` is hundreds of NS, that is:
     //
-    //     (3 * count - 1)) + 2
-    //
-    // Let's generalize that:
-    static constexpr auto TicksPerCommand = BytesPerCommand;
-    // 2x for the interval between `foo()` and `bar()` in `foo(); NOP(); bar();`
-    static constexpr auto FirstNOPTicks = 2 * TicksPerCommand;
-    // 6x because 16.667ns tick rate = 100ns/6
-    const auto requiredTicks = 6 * count;
-    return 1 + ((requiredTicks - FirstNOPTicks) / TicksPerCommand);
-};
-
-template<std::unsigned_integral T>
-void PushNOPs(const T count) {
-    if (count == 0) {
-        return;
-    }
-
-    CommandQueue::get().pushBytes(count * BytesPerCommand, [] (auto* p, const auto byteCount){
-        // Argument is ignored, so we might as well fill it with NOPs as well :)
-        std::memset(p, std::to_underlying(Command::NOP), byteCount);
-    });
+    //     (100n - (100 / 3)) / (100 / 6)
+    //     ...  (n - (1 / 3)) / (1 / 6)
+    //     ...  (6n - 2)
+    static_assert(BytesPerCommand == 2);
+    return (6 * hundredsOfNS) - 2;
 }
+// We want to maximize n where
+//   (6n - 2) <= 255
+//   ... 6n <= 257
+//   ... n <= 257 / 6
+//   ... n <= 42.8333
+// So with int math, n = 42
+constexpr auto MaxHundredsOfNSDelay = 42;
 
 struct output_enable_state_t {
     std::optional<bool> audio;
@@ -491,8 +480,7 @@ extern "C" void LK2MC_DELAY_100NS(const uint8_t count) {
         return;
     }
 
-    const auto nopCount = HundredsOfNSToNOPCount(count);
-    PushNOPs(nopCount);
+    CommandQueue::get().push(Command::Delay, HundredsOfNSToDelayArg(count));
 }
 
 extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
@@ -500,8 +488,17 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
         return;
     }
 
-    const auto nopCount = HundredsOfNSToNOPCount(static_cast<uint64_t>(duration) * 10);
-    PushNOPs(nopCount);
+    const auto hundredsOfNS = static_cast<uint64_t>(duration) * 10;
+    const auto completeDelays = hundredsOfNS / MaxHundredsOfNSDelay;
+    const auto remainder = hundredsOfNS % MaxHundredsOfNSDelay;
+
+    auto& cq = CommandQueue::get();
+    for (int i = 0; i < completeDelays; ++i) {
+        cq.push(Command::Delay, MaxHundredsOfNSDelay);
+    }
+    if (remainder) {
+        cq.push(Command::Delay, HundredsOfNSToDelayArg(remainder));
+    }
 }
 
 extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
