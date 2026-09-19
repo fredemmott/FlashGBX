@@ -125,9 +125,11 @@ class GbxDevice(LK_Device):
         return c_cb
 
     def _on_native_error(self, data: bytes) -> None:
-        dprint(f"{ANSI.RED}ERROR: {data.decode('utf-8')}{ANSI.RESET}")
+        message = data.decode('utf-8')
+        dprint(f"{ANSI.RED}ERROR: {message}{ANSI.RESET}")
     def _on_native_debug_message(self, data: bytes) -> None:
-        dprint(data.decode('utf-8'))
+        message = data.decode('utf-8')
+        dprint(message)
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected(): self.DEVICE.close()
@@ -278,6 +280,7 @@ class GbxDevice(LK_Device):
             if self.FW["hw_Chromatic/fw_ver/CartIO"] != self.REQUIRED_FW_VERSION:
                 dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version (need v{self.REQUIRED_FW_VERSION})")
                 return False
+            dprint("Firmware matches")
             return True
 
         except Exception as e:
