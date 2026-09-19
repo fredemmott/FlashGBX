@@ -12,7 +12,11 @@ extern "C" {
 #include <format>
 #include <functional>
 #include <future>
+#include <list>
 #include <ranges>
+#include <utility>
+
+#include <cstring>
 
 namespace {
 

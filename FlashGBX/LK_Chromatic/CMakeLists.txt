@@ -1,5 +1,9 @@
 include(FetchContent)
 
+if (LINUX)
+  add_compile_options(-fPIC)
+endif()
+
 set(LIBUSB_INSTALL_TARGETS OFF)
 FetchContent_Declare(libusb_cmake
   GIT_REPOSITORY https://github.com/libusb/libusb-cmake.git
@@ -92,5 +96,14 @@ if (APPLE)
       PRIVATE
       ContiguousRingBuffer_mach.cpp
       ContiguousRingBuffer_mach.hpp
+    )
+endif()
+
+if (LINUX)
+    target_sources(
+      _LK_Chromatic
+      PRIVATE
+      ContiguousRingBuffer_linux.cpp
+      ContiguousRingBuffer_linux.hpp
     )
 endif()

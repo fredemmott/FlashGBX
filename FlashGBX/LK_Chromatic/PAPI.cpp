@@ -10,8 +10,11 @@ extern "C" {
 #include <algorithm>
 #include <bit>
 #include <format>
+#include <functional>
 #include <thread>
 #include <stop_token>
+
+#include <cstring>
 
 namespace {
 
