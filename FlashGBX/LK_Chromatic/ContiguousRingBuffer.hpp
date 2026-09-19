@@ -9,6 +9,8 @@
 #include "ContiguousRingBuffer_win32.hpp"
 #elif __APPLE__
 #include "ContiguousRingBuffer_mach.hpp"
+#elif __linux__
+#include "ContiguousRingBuffer_linux.hpp"
 #else
 #error "ContiguousRingBuffer is not implemented on this platform"
 // TODO:

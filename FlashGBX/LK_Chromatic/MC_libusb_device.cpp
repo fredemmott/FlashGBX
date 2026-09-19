@@ -7,10 +7,12 @@ extern "C" {
 #include "MC_impl_common.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <expected>
 #include <list>
 #include <optional>
 #include <ranges>
+#include <utility>
 #include <vector>
 
 namespace {

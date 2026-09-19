@@ -5,7 +5,7 @@ add_library(
   cable.hpp
   jtagInterface.hpp
   part.hpp
-  spiFlashDb.hpp
+  spiFlashdb.hpp
 
   portability/unistd.hpp
 

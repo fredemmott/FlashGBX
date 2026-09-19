@@ -10,8 +10,6 @@ import ctypes
 import zipfile
 import tempfile
 
-from . import pyside
-
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
 from .LK_Chromatic import Device as MicrocodeDevice
@@ -31,6 +29,13 @@ NATIVE_PROGRESS_CALLBACK = ctypes.CFUNCTYPE(
     ctypes.c_size_t,
     ctypes.c_size_t
 )
+
+pyside = None
+try:
+    from . import pyside
+except ImportError:
+    pass
+
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
@@ -286,22 +291,24 @@ class GbxDevice(LK_Device):
         app = None
         orig_progress = None
 
-        def message(s: str) -> None: pass
+        def message(s: str) -> None:
+            print(s)
         def progress(value: int, max_value: int) -> None: pass
 
-        try:
-            app = pyside.QtGui.QGuiApplication.instance()
-            for window in pyside.QtGui.QGuiApplication.topLevelWindows():
-                widget = pyside.QtWidgets.QWidget.find(window.winId())
-                if hasattr(widget, "lblDevice"):
-                    def gui_progress(label, s:str) -> None:
-                        label.setText(s)
-                    message = lambda s, l = widget.lblDevice: gui_progress(l, s)
-                    orig_progress = widget.lblDevice.text()
-                if hasattr(widget, "SetProgressBars") and hasattr(widget, "prgStatus"):
-                    progress = lambda value, max_value, w = widget: (w.SetProgressBars(0, max_value, value), w.prgStatus.repaint())
-        except:
-            pass
+        if pyside:
+            try:
+                app = pyside.QtGui.QGuiApplication.instance()
+                for window in pyside.QtGui.QGuiApplication.topLevelWindows():
+                    widget = pyside.QtWidgets.QWidget.find(window.winId())
+                    if hasattr(widget, "lblDevice"):
+                        def gui_progress(label, s:str) -> None:
+                            label.setText(s)
+                        message = lambda s, l = widget.lblDevice: gui_progress(l, s)
+                        orig_progress = widget.lblDevice.text()
+                    if hasattr(widget, "SetProgressBars") and hasattr(widget, "prgStatus"):
+                        progress = lambda value, max_value, w = widget: (w.SetProgressBars(0, max_value, value), w.prgStatus.repaint())
+            except:
+                pass
 
         def message_callback(ptr, count) -> None:
             raw = bytes(ptr[:count])

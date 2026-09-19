@@ -13,6 +13,8 @@ extern "C" {
 #include "openFPGAloader/progressBar.hpp"
 
 #include <format>
+#include <functional>
+#include <utility>
 
 namespace {
 
