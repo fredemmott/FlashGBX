@@ -115,7 +115,7 @@ if ($NoSign) {
 
 ##### 5. Build zip #####
 7z a -tzip -mx=9 "artifacts\FlashGBX-$($Version.Replace('+','_'))_Windows-x64.zip" ".\output\*"
-
+7z a -tzip -mx=9 "artifacts\chromatic_cartio-driver-$($Version.Replace('+','_')).zip" ".\output\Drivers\chromatic_cartio\*"
 
 ##### 6. Fetch driver ######
 $ch341Dir = "artifacts\drivers\CH341"
