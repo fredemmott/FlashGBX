@@ -235,8 +235,30 @@ transfers_t& transfers() {
 struct LibUSBDevice {
     LibUSBDevice() = delete;
     LibUSBDevice(const uint16_t vendorID, const uint16_t productID, const uint8_t interfaceNumber) : _interface(interfaceNumber) {
-        std::ignore = libusb_init_context(&_context, nullptr, 0);
+        dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x}, {})", vendorID, productID, interfaceNumber);
+        if (const auto ret = libusb_init_context(&_context, nullptr, 0); ret != LIBUSB_SUCCESS) {
+            LogError("libusb_init_context failed: {} ('{}')", ret, libusb_error_name(ret));
+            return;
+        }
+        libusb_device** devices {nullptr};
+        const auto deviceCount = libusb_get_device_list(_context, &devices);
+        if (deviceCount < 0) {
+            LogError("libusb_get_device_list() failed: {} ('{}')", deviceCount, libusb_error_name(static_cast<libusb_error>(deviceCount)));
+            return;
+        }
+        dprint("libusb_get_device_list() returned {} devices", deviceCount);
+        for (ssize_t i = 0; i < deviceCount; ++i) {
+            libusb_device_descriptor it {};
+            libusb_get_device_descriptor(devices[i], &it);
+            dprint("Device: {:#06x}:{:#06x}", it.idVendor, it.idProduct);
+        }
+
+        libusb_free_device_list(devices, true);
         _device = libusb_open_device_with_vid_pid(_context, vendorID, productID);
+        if (!_device) {
+            LogError("libusb_open_device_with_vid_pid() did not return a device");
+            return;
+        }
         libusb_set_auto_detach_kernel_driver(_device, true);
 
         {
@@ -275,12 +297,18 @@ struct LibUSBDevice {
     }
 
     ~LibUSBDevice() {
+        dprint("LibUSBDevice::~LibUSBDevice()");
         if (_interface) {
             libusb_release_interface(_device, *_interface);
         }
 
-        libusb_close(_device);
-        libusb_exit(_context);
+        if (_device) {
+            libusb_close(_device);
+        }
+
+        if (_context) {
+            libusb_exit(_context);
+        }
     }
 
     [[nodiscard]]
@@ -294,15 +322,9 @@ struct LibUSBDevice {
     }
 
     [[nodiscard]]
-    LibUSBTransfer makeWriteTransfer() {
-        return { _device, _context, _epOut };
+    bool valid() const noexcept {
+        return _context && _device && _interface;
     }
-
-    [[nodiscard]]
-    LibUSBTransfer makeReadTransfer() {
-        return { _device, _context, _epIn };
-    }
-
 private:
     static constexpr auto DefaultTimeout = LibUSBTransfer::DefaultTimeout;
 
@@ -382,14 +404,20 @@ extern "C" void mc_transport_flush() {
     }
 }
 
-void mc_usb_open(
-  const uint16_t vendorID,
-  const uint16_t productID,
-  const uint8_t interfaceNumber) {
-  device().reset();
-  device().emplace(vendorID, productID, interfaceNumber);
+bool mc_usb_open(
+    const uint16_t vendorID,
+    const uint16_t productID,
+    const uint8_t interfaceNumber) {
+    auto& it = device();
+    it.reset();
+    it.emplace(vendorID, productID, interfaceNumber);
+    if (it->valid()) {
+        mc_init();
+        return true;
+    }
 
-  mc_init();
+    it.reset();
+    return false;
 }
 
 void mc_usb_close() {

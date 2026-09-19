@@ -15,7 +15,14 @@ extern "C" {
 
 namespace {
 
-PAPIStringCallback PAPI_OnError = nullptr;
+struct callbacks_t {
+    PAPIStringCallback on_error { nullptr };
+    PAPIStringCallback on_debug_message { nullptr };
+};
+callbacks_t& callbacks() {
+    static callbacks_t callbacks;
+    return callbacks;
+}
 
 template<std::size_t N>
 requires (std::has_single_bit(N)) // must be power of two
@@ -118,8 +125,14 @@ private:
 };
 
 constexpr auto LargestDMGROM = 8 * 1024 * 1024;
-ContiguousSPSCStream<LargestDMGROM> gPAPI_to_LK("PAPI-to-LK");
-ContiguousSPSCStream<LargestDMGROM> gLK_to_PAPI("LK-to-PAPI");;
+struct Streams_t {
+    ContiguousSPSCStream<LargestDMGROM> papi_to_lk { "PAPI-to-LK" };
+    ContiguousSPSCStream<LargestDMGROM> lk_to_papi { "LK-to-PAPI" };
+};
+Streams_t& streams() {
+    static Streams_t instance {};
+    return instance;
+}
 
 #ifdef _WIN32
 [[nodiscard]]
@@ -152,7 +165,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_recv_from_lk(uint8_t* data, const uint1
     SPAMMY(TraceLoggingWriteStart(tla, "papi_recv_from_lk()"));
 
 
-    gLK_to_PAPI.read(data, count);
+    streams().lk_to_papi.read(data, count);
 
     SPAMMY(TraceLoggingWriteStop(tla, "papi_recv_from_lk()"));
 }
@@ -174,7 +187,7 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
                 while (!stop.stop_requested()) {
                     uint8_t cmd {};
                     {
-                        if (!gPAPI_to_LK.read(&cmd, 1, stop)) {
+                        if (!streams().papi_to_lk.read(&cmd, 1, stop)) {
                             haveWorker.clear();
                             UNSET_THREAD_NAME();
                             return;
@@ -189,16 +202,22 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
         }.detach();
     }
 
-    gPAPI_to_LK.write(count, [src = data](uint8_t* const dst, const std::size_t n) {
+    streams().papi_to_lk.write(count, [src = data](uint8_t* const dst, const std::size_t n) {
         std::memcpy(dst, src, n);
     });
 
     SPAMMY(TraceLoggingWriteStop(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 }
 
-extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber) {
+
+extern "C" LK_CHROMATIC_EXPORT papi_open_status papi_open(
+    const uint16_t vendorID,
+    const uint16_t productID,
+    const uint8_t interfaceNumber) {
     dprint("Attempting to open libusb device");
-    mc_usb_open(vendorID, productID, interfaceNumber);
+    if (!mc_usb_open(vendorID, productID, interfaceNumber)) {
+        return papi_open_status::OpenError;
+    }
 
     // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
     const auto cookie = GetPingCookie();
@@ -208,13 +227,16 @@ extern "C" LK_CHROMATIC_EXPORT void papi_open(uint16_t vendorID, uint16_t produc
     const auto actual = mc_standalone_ping(cookie);
     if (actual != expected) {
         LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
-        return;
+        mc_usb_close();
+        return papi_open_status::PingError;
     }
     dprint("LK_Chromatic: Initial ping OK");
 
     std::ranges::fill(_lk_var8, 0);
     std::ranges::fill(_lk_var16, 0);
     std::ranges::fill(_lk_var32, 0);
+
+    return papi_open_status::Success;
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
@@ -222,59 +244,67 @@ extern "C" LK_CHROMATIC_EXPORT void papi_close() {
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(PAPIStringCallback cb) {
-    PAPI_OnError = cb;
+    callbacks().on_error = cb;
+}
+
+extern "C" LK_CHROMATIC_EXPORT void papi_set_on_debug_message_callback(PAPIStringCallback cb) {
+    callbacks().on_debug_message = cb;
 }
 
 extern "C" void mc_on_debug_message(const char* const str, const std::size_t length) {
+
+#ifdef _WIN32
     TraceLoggingWrite(gTL, "dprint", TraceLoggingCountedString(str, length, "message"));
 
     const auto ds = std::format("{}\n", std::string_view { str, length });
-#ifdef _WIN32
     OutputDebugStringA(ds.c_str());
 #endif
+
+    if (const auto cb = callbacks().on_debug_message) {
+        cb(str, length);
+    }
 }
 
 extern "C" void mc_on_error(const char* const str, const std::size_t length) {
+#ifdef _WIN32
     TraceLoggingWrite(gTL, "ERROR", TraceLoggingCountedString(str, length, "message"));
 
     const auto ds = std::format("ERROR: {}\n", std::string_view { str, length });
-#ifdef _WIN32
     OutputDebugStringA(ds.c_str());
 #endif
 
-    if (PAPI_OnError) {
-        const auto fgbx = std::format("LK-MC: {}\r\n", std::string_view { str, length });
-        PAPI_OnError(fgbx.c_str(), fgbx.length());
+    if (const auto cb = callbacks().on_error) {
+        cb(str, length);
     }
 }
 
 extern "C" void papi_send_to_lk_reset_output_buffer() {
-    gPAPI_to_LK.clear();
+    streams().papi_to_lk.clear();
 }
 
 extern "C" void papi_send_to_lk_flush() {
-    while (gPAPI_to_LK.pending_count()) {
+    while (streams().papi_to_lk.pending_count()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
 extern "C" uint16_t papi_recv_from_lk_pending_count() {
-    return gLK_to_PAPI.pending_count();
+    return streams().lk_to_papi.pending_count();
 }
 
 extern "C" void papi_recv_from_lk_reset_input_buffer() {
-    gLK_to_PAPI.clear();
+    streams().lk_to_papi.clear();
 }
 
 ///// implement LK host IO functions using the PAPI buffers //////
 
 extern "C" void lk_send_to_host(const uint8_t* data, const uint16_t count) {
-    gLK_to_PAPI.write(count, [src = data](uint8_t* const dest, const std::size_t n) {
+    streams().lk_to_papi.write(count, [src = data](uint8_t* const dest, const std::size_t n) {
         std::memcpy(dest, src, n);
     });
 }
 
 
 extern "C" void lk_recv_from_host(uint8_t* data, const uint16_t count) {
-    gPAPI_to_LK.read(data, count);
+    streams().papi_to_lk.read(data, count);
 }

@@ -56,10 +56,6 @@ class Device(serial.Serial):
         self._papi.papi_send_to_lk_flush()
         pass
 
-    def lk_on_error(self, data: bytes) -> None:
-        dprint("lk_on_error")
-        pass
-
     def init_chromatic(self, papi):
         self._papi = papi
 

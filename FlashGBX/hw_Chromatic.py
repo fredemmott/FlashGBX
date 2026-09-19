@@ -74,7 +74,7 @@ class GbxDevice(LK_Device):
         self._papi.papi_fpga_reset.restype = ctypes.c_int
 
         self._papi.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
-        self._papi.papi_open.restype = None
+        self._papi.papi_open.restype = ctypes.c_int
 
         self._papi.papi_close.argtypes = []
         self._papi.papi_close.restype = None
@@ -100,10 +100,15 @@ class GbxDevice(LK_Device):
         self._papi.papi_set_on_error_callback.argtypes = [NATIVE_STRING_CALLBACK]
         self._papi.papi_set_on_error_callback.restype = None
 
-        def cb(ptr, count) -> None:
-            self._lk_on_error(bytes(ptr[:count]))
-        self._lk_on_error_cb = NATIVE_STRING_CALLBACK(cb)
+        def on_error_callback(ptr, count) -> None:
+            self._on_native_error(bytes(ptr[:count]))
+        self._lk_on_error_cb = NATIVE_STRING_CALLBACK(on_error_callback)
         self._papi.papi_set_on_error_callback(self._lk_on_error_cb)
+        def on_debug_message_callback(ptr, count) -> None:
+            self._on_native_debug_message(bytes(ptr[:count]))
+        self._lk_on_debug_message_cb = NATIVE_STRING_CALLBACK(on_debug_message_callback)
+        self._papi.papi_set_on_debug_message_callback(self._lk_on_debug_message_cb)
+
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
@@ -114,9 +119,10 @@ class GbxDevice(LK_Device):
         reg_fn(c_cb)
         return c_cb
 
-    def _lk_on_error(self, data: bytes) -> None:
-        self.DEVICE.lk_on_error(data)
-        pass
+    def _on_native_error(self, data: bytes) -> None:
+        dprint(f"{ANSI.RED}ERROR: {data.decode('utf-8')}{ANSI.RESET}")
+    def _on_native_debug_message(self, data: bytes) -> None:
+        dprint(data.decode('utf-8'))
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected(): self.DEVICE.close()
@@ -176,9 +182,10 @@ class GbxDevice(LK_Device):
 
     # noinspection PyUnresolvedReferences
     def LoadFirmwareVersion(self):
-        dprint("Querying firmware version")
         if self.DEVICE is None: return False
         if not hasattr(self.DEVICE, "_haveFredEmmottMicrocode"):
+            dprint("Querying firmware version")
+
             match = self._query_firmware_version()
             if not match:
                 self._program_sram()
@@ -191,8 +198,7 @@ class GbxDevice(LK_Device):
                 self.FW = None
             if self.DEVICE is None:
                 return False
-            self._activate_cartridge_io_mode()
-            self.DEVICE._haveFredEmmottMicrocode = True
+            self.DEVICE._haveFredEmmottMicrocode = self._activate_cartridge_io_mode()
         return self.DEVICE._haveFredEmmottMicrocode
 
 
@@ -208,7 +214,6 @@ class GbxDevice(LK_Device):
 
             view = memoryview(device_id)
 
-            p = 0
             def consume(n: int):
                 nonlocal view
                 ret = view[:n]
@@ -223,7 +228,9 @@ class GbxDevice(LK_Device):
                 match = True
                 break
 
-            if not match: return False
+            if not match:
+                dprint(f"No matching section found in {len(view)} byte ID response")
+                return False
 
             # BCD
             year = consume(2).hex()
@@ -260,16 +267,20 @@ class GbxDevice(LK_Device):
                 pass
             return False
 
-    def _activate_cartridge_io_mode(self):
+    def _activate_cartridge_io_mode(self) -> bool:
         self._write(bytearray(b'fredemmott/CartIO\0')) # Switch mode
         time.sleep(0.10)
 
         self.DEVICE.__class__ = MicrocodeDevice
         cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._papi)
 
-        self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, self.FW["hw_Chromatic/CartIO_usb_if"])
+        status = self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, self.FW["hw_Chromatic/CartIO_usb_if"])
+        if status != 0:
+            dprint(f"{ANSI.RED}Failed to open device: {status}{ANSI.RESET}")
+            return False
 
-        self._query_lk_firmware_version()
+
+        return self._query_lk_firmware_version()
 
     def _program_sram(self) -> bool:
         app = None
@@ -341,7 +352,7 @@ class GbxDevice(LK_Device):
                 if app:
                     app.processEvents()
 
-    def _query_lk_firmware_version(self):
+    def _query_lk_firmware_version(self) -> bool:
         self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
         size = self._read(1)
         if size != 8: return False

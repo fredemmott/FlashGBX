@@ -62,7 +62,8 @@ void LogError(std::format_string<Args...> fmt, Args&&... args) {
   mc_on_error(s.c_str(), s.size());
 }
 
-void mc_usb_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber);
+[[nodiscard]]
+bool mc_usb_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber);
 void mc_usb_close();
 
 #endif
