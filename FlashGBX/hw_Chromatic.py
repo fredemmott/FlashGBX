@@ -40,7 +40,7 @@ except ImportError:
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
     ID_PREFIX = b"fredemmott/CartIO\x00"
-    REQUIRED_FW_VERSION = "2026.09.19.1"
+    REQUIRED_FW_VERSION = "2026.09.20.0"
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
@@ -113,11 +113,6 @@ class GbxDevice(LK_Device):
             self._on_native_debug_message(bytes(ptr[:count]))
         self._lk_on_debug_message_cb = NATIVE_STRING_CALLBACK(on_debug_message_callback)
         self._papi.papi_set_on_debug_message_callback(self._lk_on_debug_message_cb)
-
-    def __del__(self):
-        if self._papi:
-            self._papi.papi_set_on_debug_message_callback(NATIVE_STRING_CALLBACK(0))
-            self._papi.papi_set_on_error_callback(NATIVE_STRING_CALLBACK(0))
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
@@ -235,14 +230,30 @@ class GbxDevice(LK_Device):
     def _query_firmware_version(self) -> bool:
         try:
             self.DEVICE.timeout = 0.075
-            time.sleep(0.01) # Receive any pending bytes from device FIFO (e.g. MCU spam)
             self.DEVICE.reset_input_buffer()
             self.DEVICE.reset_output_buffer()
 
+            # Reset/exit ModRetro mode
+            #
+            # This command does not produce a response; it:
+            # - disconnects the UART from the USB serial device; after this, any *new* data is from
+            #   our protocol, not the UART
+            # - makes it listen for other commands, like the ID command below
+            self._write(bytearray(b'\xAA\x55\xF0'))
+
+            # We reset the OS/driver/host controller buffers above, but check if there's anything
+            # in the device buffers; if so, drain it
+            #
+            # This is needed on macOS, but not on Windows
+            for _ in range(5):
+                # Timeout is effectively the loop delay
+                if len(self.DEVICE.read(4096)) == 0:
+                    break
+
+            # Now that we don't have anything pending, send the ID command
             self._write(bytearray(b'\xAA\x55\x90'))
             time.sleep(0.01)
             device_id = self.DEVICE.read(self.DEVICE.in_waiting)
-
             view = memoryview(device_id)
 
             def consume(n: int):
