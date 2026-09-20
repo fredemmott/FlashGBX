@@ -114,6 +114,10 @@ class GbxDevice(LK_Device):
         self._lk_on_debug_message_cb = NATIVE_STRING_CALLBACK(on_debug_message_callback)
         self._papi.papi_set_on_debug_message_callback(self._lk_on_debug_message_cb)
 
+    def __del__(self):
+        if self._papi:
+            self._papi.papi_set_on_debug_message_callback(NATIVE_STRING_CALLBACK(0))
+            self._papi.papi_set_on_error_callback(NATIVE_STRING_CALLBACK(0))
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
