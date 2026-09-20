@@ -234,12 +234,50 @@ transfers_t& transfers() {
     return _transactions;
 }
 
-struct LibUSBDevice {
-    LibUSBDevice() = delete;
-    LibUSBDevice(const uint16_t vendorID, const uint16_t productID, const uint8_t interfaceNumber) : _interface(interfaceNumber) {
-        dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x}, {})", vendorID, productID, interfaceNumber);
+struct LibUSBContext {
+    LibUSBContext() {
+        dprint("LibUSBContext::LibUSBContext()");
         if (const auto ret = libusb_init_context(&_context, nullptr, 0); ret != LIBUSB_SUCCESS) {
             LogError("libusb_init_context failed: {} ('{}')", ret, libusb_error_name(ret));
+            _context = nullptr;
+            return;
+        }
+    }
+
+    ~LibUSBContext() {
+        dprint("LibUSBContext::~LibUSBContext()");
+        if (_context) {
+            dprint("Releasing _context");
+            libusb_exit(_context);
+        }
+    }
+
+    operator libusb_context*() const noexcept {
+        return _context;
+    }
+
+    LibUSBContext(const LibUSBContext&) = delete;
+    LibUSBContext(LibUSBContext&&) = delete;
+    LibUSBContext& operator=(const LibUSBContext&) = delete;
+    LibUSBContext& operator=(LibUSBContext&&) = delete;
+private:
+    libusb_context* _context { nullptr };
+};
+LibUSBContext& context() {
+    static LibUSBContext ctx;
+    return ctx;
+}
+
+struct LibUSBDevice {
+    LibUSBDevice() = delete;
+    LibUSBDevice(
+        LibUSBContext& ctx,
+        const uint16_t vendorID, const uint16_t productID, const uint8_t interfaceNumber) : _interface(interfaceNumber) {
+        dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x}, {})", vendorID, productID, interfaceNumber);
+
+        _context = ctx;
+        if (!_context) {
+            LogError("Can't initialize LibUSBDevice without a LibUSBContext");
             return;
         }
         libusb_device** devices {nullptr};
@@ -301,16 +339,18 @@ struct LibUSBDevice {
     ~LibUSBDevice() {
         dprint("LibUSBDevice::~LibUSBDevice()");
         if (_interface) {
+            dprint("Releasing interface");
             libusb_release_interface(_device, *_interface);
         }
 
         if (_device) {
+            dprint("Releasing device");
             libusb_close(_device);
         }
 
-        if (_context) {
-            libusb_exit(_context);
-        }
+        dprint("Not releasing context, not owned by connection");
+
+        dprint("Released");
     }
 
     [[nodiscard]]
@@ -412,7 +452,7 @@ bool mc_usb_open(
     const uint8_t interfaceNumber) {
     auto& it = device();
     it.reset();
-    it.emplace(vendorID, productID, interfaceNumber);
+    it.emplace(context(), vendorID, productID, interfaceNumber);
     if (it->valid()) {
         mc_init();
         return true;
