@@ -143,15 +143,31 @@ class GbxDevice(LK_Device):
             if len(ports) == 0: return False
 
         for i in range(0, len(ports)):
-            if self.TryConnect(ports[i], max_baud):
-                self.BAUDRATE = max_baud
-                dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1)
-                self.DEVICE = dev
-                if self.DEVICE is not None: self.LoadFirmwareVersion()
-            else:
+            # The usual thing for other devices is to call `TryConnect`, then if that succeeds, reconnect.
+            #
+            # That means we need to go through the whole handshake multiple times, which takes more time,
+            # and makes a mildly concerning flickering noise as:
+            #
+            # - a complete handshake turns off the screen and audio
+            # - disconnecting reconnects them
+            #
+            # Just connect directly instead :)
+            try:
+                dev = serial.Serial(ports[i], max_baud, timeout=0.1, exclusive=True)
+            except (SerialException, OSError) as e:
+                dprint(f"Couldn’t connect to port {port:s} at baudrate {max_baud:d}:", e)
+                return False
+            self.DEVICE = dev
+            if not self.LoadFirmwareVersion():
+                self.DEVICE = None
+                dev.close()
                 continue
 
-            if self.FW is None or self.FW == {}: continue
+
+            if self.FW is None or self.FW == {}:
+                self.DEVICE = None
+                dev.close()
+                continue
 
             dprint(f"Found a {self.DEVICE_NAME}")
             dprint("Firmware information:", self.FW)
