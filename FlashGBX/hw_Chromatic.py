@@ -198,10 +198,13 @@ class GbxDevice(LK_Device):
             if not match:
                 dprint("Failed to write firmware to SRAM")
                 self.FW = None
+                return False
             if match and not self._query_firmware_version():
                 dprint("Firmware ID is unstable")
                 self.FW = None
+                return False
             if self.DEVICE is None:
+                self.FW = None
                 return False
             self.DEVICE._haveFredEmmottMicrocode = self._activate_cartridge_io_mode()
         return self.DEVICE._haveFredEmmottMicrocode
