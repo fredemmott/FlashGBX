@@ -411,7 +411,7 @@ class GbxDevice(LK_Device):
         return False
 
     def CanSetVoltageByAutoswitch(self):
-        return True
+        return False
 
     def CanSetVoltageByCode(self):
         return False
