@@ -210,6 +210,7 @@ class GbxDevice(LK_Device):
     def _query_firmware_version(self) -> bool:
         try:
             self.DEVICE.timeout = 0.075
+            time.sleep(0.01) # Receive any pending bytes from device FIFO (e.g. MCU spam)
             self.DEVICE.reset_input_buffer()
             self.DEVICE.reset_output_buffer()
 
