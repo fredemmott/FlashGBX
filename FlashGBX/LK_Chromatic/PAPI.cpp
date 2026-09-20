@@ -95,7 +95,7 @@ struct ContiguousSPSCStream {
         }
 
         std::memcpy(dest, _buffer.subspan(offset, count).data(), count);
-        _readPos.store(offset + count, std::memory_order_relaxed);
+        _readPos.store(offset + count, std::memory_order_release);
 
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
@@ -107,9 +107,15 @@ struct ContiguousSPSCStream {
         return _writePos.load(std::memory_order_acquire) - _readPos.load(std::memory_order_acquire);
     }
 
-    void clear() {
-        const auto currentWrite = _writePos.load(std::memory_order_acquire);
-        _readPos.store(currentWrite, std::memory_order_release);
+    void clear_read_buffer() {
+        const auto drainTo = _writePos.load(std::memory_order_acquire);
+        _readPos.store(drainTo, std::memory_order_release);
+    }
+
+    void clear_write_buffer() {
+        const auto truncateTo = _readPos.load(std::memory_order_acquire);
+        _writePos.store(truncateTo, std::memory_order_release);
+    }
     }
 
 private:
@@ -155,6 +161,38 @@ uint8_t GetPingCookie() {
 }
 #endif
 
+struct Worker {
+    Worker() {
+        _thread = std::jthread { &Worker::thread_main };
+    }
+private:
+    std::jthread _thread;
+
+    static void thread_main(const std::stop_token& stop) {
+        SET_THREAD_NAME("LK -> Microcode worker");
+
+        while (!stop.stop_requested()) {
+            uint8_t cmd {};
+            if (!streams().papi_to_lk.read(&cmd, 1, stop)) {
+                UNSET_THREAD_NAME();
+                return;
+            }
+            SPAMMY(TraceLoggingThreadActivity<gTL> tla);
+            SPAMMY(TraceLoggingWriteStart(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
+            mc_exec(cmd);
+            SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
+        }
+    }
+};
+auto& worker() {
+    static std::optional<Worker> worker;
+    return worker;
+}
+void ensure_worker() {
+    if (!worker()) {
+        worker().emplace();
+    }
+}
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_recv_from_lk(uint8_t* data, const uint16_t count) {
@@ -179,33 +217,11 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
     SPAMMY(TraceLoggingThreadActivity<gTL> tla);
     SPAMMY(TraceLoggingWriteStart(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 
-    static std::atomic_flag haveWorker {};
-    if (!haveWorker.test_and_set()) {
-        std::jthread {
-            [] (const std::stop_token& stop) {
-                SET_THREAD_NAME("LK -> Microcode worker");
-
-                while (!stop.stop_requested()) {
-                    uint8_t cmd {};
-                    {
-                        if (!streams().papi_to_lk.read(&cmd, 1, stop)) {
-                            haveWorker.clear();
-                            UNSET_THREAD_NAME();
-                            return;
-                        }
-                    }
-                    SPAMMY(TraceLoggingThreadActivity<gTL> tla);
-                    SPAMMY(TraceLoggingWriteStart(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
-                    mc_exec(cmd);
-                    SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
-                }
-            }
-        }.detach();
-    }
-
     streams().papi_to_lk.write(count, [src = data](uint8_t* const dst, const std::size_t n) {
         std::memcpy(dst, src, n);
     });
+
+    ensure_worker();
 
     SPAMMY(TraceLoggingWriteStop(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 }
@@ -280,7 +296,9 @@ extern "C" void mc_on_error(const char* const str, const std::size_t length) {
 }
 
 extern "C" void papi_send_to_lk_reset_output_buffer() {
-    streams().papi_to_lk.clear();
+    worker().reset();
+
+    streams().papi_to_lk.clear_write_buffer();
 }
 
 extern "C" void papi_send_to_lk_flush() {
@@ -294,7 +312,9 @@ extern "C" uint16_t papi_recv_from_lk_pending_count() {
 }
 
 extern "C" void papi_recv_from_lk_reset_input_buffer() {
-    streams().lk_to_papi.clear();
+    worker().reset();
+
+    streams().lk_to_papi.clear_read_buffer();
 }
 
 ///// implement LK host IO functions using the PAPI buffers //////
