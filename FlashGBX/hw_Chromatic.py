@@ -9,6 +9,7 @@ import sysconfig
 import ctypes
 import zipfile
 import tempfile
+import atexit
 
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
@@ -70,6 +71,7 @@ class GbxDevice(LK_Device):
         path = native_dir / name
         self._papi = ctypes.CDLL(str(path))
         self._load_ffi()
+        atexit.register(self._unload_native_callbacks)
 
     def _load_ffi(self):
         self._papi.papi_fpga_program_sram.argtypes = [ctypes.c_char_p, ctypes.c_size_t, NATIVE_STRING_CALLBACK, NATIVE_PROGRESS_CALLBACK]
@@ -113,6 +115,10 @@ class GbxDevice(LK_Device):
             self._on_native_debug_message(bytes(ptr[:count]))
         self._lk_on_debug_message_cb = NATIVE_STRING_CALLBACK(on_debug_message_callback)
         self._papi.papi_set_on_debug_message_callback(self._lk_on_debug_message_cb)
+
+    def _unload_native_callbacks(self) -> None:
+        self._papi.papi_set_on_debug_message_callback(NATIVE_STRING_CALLBACK(0))
+        self._papi.papi_set_on_error_callback(NATIVE_STRING_CALLBACK(0))
 
     def _reg_ffi_recv_callback(self, reg_fn, py_fn):
         def cb(ptr, count) -> None:
