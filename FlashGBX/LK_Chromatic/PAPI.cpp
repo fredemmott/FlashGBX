@@ -72,6 +72,7 @@ struct ContiguousSPSCStream {
             SPAMMY(TraceLoggingWriteStart(tlb, "Stream::read()/wait"));
             const auto spinSince = std::chrono::steady_clock::now();
             std::size_t spinCount = 0;
+            auto lastTimeoutCheckAt = spinSince;
             while (true) {
                 if (cancel.stop_requested()) {
                     SPAMMY(TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("stopped", "result")));
@@ -88,13 +89,18 @@ struct ContiguousSPSCStream {
                 // but not to busy-spin if we're waiting for:
                 // - extremely slow operations like chip erase
                 // - user input
-                if ((++spinCount & 0xFFFF) == 0) {
-                    if (std::chrono::steady_clock::now() - spinSince >= std::chrono::milliseconds(10)) {
+                if ((++spinCount & _timeoutCheckMask) == 0) {
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now - spinSince >= std::chrono::milliseconds(10)) {
                         if (!this->wait_until_have_at_least_n_bytes(count, cancel)) {
                             return false;
                         }
                         break;
                     }
+                    if (now - lastTimeoutCheckAt < std::chrono::microseconds(100)) {
+                        _timeoutCheckMask = (_timeoutCheckMask << 1) | 1;
+                    }
+                    lastTimeoutCheckAt = now;
                 }
 
 #ifdef _WIN32
@@ -175,6 +181,8 @@ private:
     std::atomic<std::size_t> _eventSeq {};
 
     const char* const _label;
+
+    std::size_t _timeoutCheckMask { 0xFFFF };
 };
 
 constexpr auto LargestDMGROM = 8 * 1024 * 1024;
