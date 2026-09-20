@@ -162,7 +162,7 @@ class GbxDevice(LK_Device):
             try:
                 dev = serial.Serial(ports[i], max_baud, timeout=0.1, exclusive=True)
             except (SerialException, OSError) as e:
-                dprint(f"Couldn’t connect to port {port:s} at baudrate {max_baud:d}:", e)
+                dprint(f"Couldn’t connect to port {ports[i]:s} at baudrate {max_baud:d}:", e)
                 return False
             self.DEVICE = dev
             if not self.LoadFirmwareVersion():
