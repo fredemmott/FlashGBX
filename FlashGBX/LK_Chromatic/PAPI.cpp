@@ -75,7 +75,7 @@ struct ContiguousSPSCStream {
             while (true) {
                 if (cancel.stop_requested()) {
                     SPAMMY(TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("stopped", "result")));
-                    break;
+                    return false;
                 }
 
                 writeOff = _writePos.load(std::memory_order_acquire);
