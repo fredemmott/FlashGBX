@@ -95,13 +95,7 @@ struct ContiguousSPSCStream {
         }
 
         std::memcpy(dest, _buffer.subspan(offset, count).data(), count);
-        const auto next = offset + count;
-        if (next == _writePos) {
-            _readPos.store(0, std::memory_order_relaxed);
-            _writePos.store(0, std::memory_order_release);
-        } else {
-            _readPos.store(next, std::memory_order_relaxed);
-        }
+        _readPos.store(offset + count, std::memory_order_relaxed);
 
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
@@ -119,6 +113,10 @@ struct ContiguousSPSCStream {
     }
 
 private:
+    // This provides:
+    // - contiguous mapping regardless of offset, via mmap or similar tricks
+    // - transparent modulo of offsets via `subspan()` so we can use
+    //   perpetually incrementing counters for simplicity
     ContiguousRingBuffer _buffer { N };
 
     std::atomic<std::size_t> _readPos {};
