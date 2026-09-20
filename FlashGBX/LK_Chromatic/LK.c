@@ -1930,7 +1930,6 @@ void lk_dmg_agb_flash_unbuffered(void) {
 			}
 			LK_ASYNC_FLUSH(NULL, 0);
 			u16 verify_i = 0;
-			dprint("Verifying total size %u in chunks of up to %u", _lk_var16[LK_VAR16_TRANSFER_SIZE], CHUNK_MAX_LEN);
 			for (u16 data_i = 0; data_i < _lk_var16[LK_VAR16_TRANSFER_SIZE]; data_i++) {
 				if (data_buffer[data_i] == 0xFF) continue;
 				if (data_buffer[data_i] != verify_data_buffer[verify_i]) {
