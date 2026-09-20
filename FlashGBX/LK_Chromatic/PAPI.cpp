@@ -48,6 +48,8 @@ struct ContiguousSPSCStream {
         std::invoke(std::forward<Fn>(f), span.data(), count);
         _writePos.store(offset + count, std::memory_order_release);
         _writePos.notify_one();
+        _eventSeq.fetch_add(1, std::memory_order_release);
+        _eventSeq.notify_one();
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
     }
 
@@ -63,15 +65,13 @@ struct ContiguousSPSCStream {
 
         const auto offset = _readPos.load(std::memory_order_relaxed);
 
-        const std::stop_callback stopCallback{cancel, [this] {
-            _writePos.notify_all();
-        }};
-
         {
             std::size_t writeOff {};
 
             SPAMMY(TraceLoggingThreadActivity<gTL> tlb);
             SPAMMY(TraceLoggingWriteStart(tlb, "Stream::read()/wait"));
+            const auto spinSince = std::chrono::steady_clock::now();
+            std::size_t spinCount = 0;
             while (true) {
                 if (cancel.stop_requested()) {
                     SPAMMY(TraceLoggingWriteStop(tlb, "Stream::read()/wait", TraceLoggingValue("stopped", "result")));
@@ -84,13 +84,28 @@ struct ContiguousSPSCStream {
                     break;
                 }
 
+                // Idea is to busy-spin while FlashGBX is actually doing something,
+                // but not to busy-spin if we're waiting for:
+                // - extremely slow operations like chip erase
+                // - user input
+                if ((++spinCount & 0xFFFF) == 0) {
+                    if (std::chrono::steady_clock::now() - spinSince >= std::chrono::milliseconds(10)) {
+                        if (!this->wait_until_have_at_least_n_bytes(count, cancel)) {
+                            return false;
+                        }
+                        break;
+                    }
+                }
+
 #ifdef _WIN32
+                // this_thread::yield() is *very* slow on Windows; using it
+                // halves throughput...
                 _mm_pause();
 #else
+                // ... but on macOS and Linux, yield is much faster and I didn't
+                // notice a significant impact on throughput
                 std::this_thread::yield();
 #endif
-
-                //_writePos.wait(writeOff, std::memory_order_release);
             }
         }
 
@@ -116,6 +131,35 @@ struct ContiguousSPSCStream {
         const auto truncateTo = _readPos.load(std::memory_order_acquire);
         _writePos.store(truncateTo, std::memory_order_release);
     }
+
+    [[nodiscard]]
+    bool wait_until_have_at_least_n_bytes(const std::size_t count, const std::stop_token& token) {
+        const auto readPos = _readPos.load(std::memory_order_relaxed);
+
+        auto seq = _eventSeq.load(std::memory_order_acquire);
+        auto writePos = _writePos.load(std::memory_order_acquire);
+        if (writePos - readPos >= count) {
+            return true;
+        }
+
+        const std::stop_callback callback {
+            token,
+            [this] {
+                _eventSeq.fetch_add(1, std::memory_order_release);
+                _eventSeq.notify_one();
+            }
+        };
+
+        while (writePos - readPos < count) {
+            if (token.stop_requested()) {
+                return false;
+            }
+            _eventSeq.wait(seq);
+            seq = _eventSeq.load(std::memory_order_relaxed);
+            writePos = _writePos.load(std::memory_order_acquire);
+        }
+
+        return true;
     }
 
 private:
@@ -127,6 +171,8 @@ private:
 
     std::atomic<std::size_t> _readPos {};
     std::atomic<std::size_t> _writePos {};
+
+    std::atomic<std::size_t> _eventSeq {};
 
     const char* const _label;
 };
