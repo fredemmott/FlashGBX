@@ -145,31 +145,59 @@ class GbxDevice(LK_Device):
         message = data.decode('utf-8')
         dprint(message)
 
-    def TryConnect(self, port, baudrate):
+    def _try_connect(self, port) -> MicrocodeDevice | None:
         if port is not None and port != self.PORT:
-            return False
+            return None
         dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
         res = dev.open()
-        if res != 0:
-            dprint(f"{ANSI.RED}ERROR: Failed to open device: {res}{ANSI.RESET}")
-            dev.close()
-            return False
+        # See papi_open() in PAPI.hpp
+        match res:
+            case 0: # Success
+                pass
+            case 1: # DeviceNotFound
+                dprint(f"No {self.DEVICE_NAME} found")
+                return None
+            case 2: # InterfaceNotFound
+                # Incorrect firmware version, handled in LoadFirmwareVersion
+                pass
+            case _:
+                dprint(f"{ANSI.RED}ERROR: Failed to open device: {res}{ANSI.RESET}")
+                return None
+
+        old, self.DEVICE = self.DEVICE, dev
         match = self.LoadFirmwareVersion()
+        self.DEVICE = old
+
+        if not match:
+            dev.close()
+            return None
+
+        challenge = os.urandom(1)[0]
+        expected = (~challenge) & 0xFF
+        dev.write(bytearray([self.DEVICE_CMD["PING"], challenge]))
+        response = dev.read(1)
+        if response != bytearray([expected]):
+            dprint(f"{ANSI.RED}PING ERROR: expected 0x{challenge:02X} -> 0x{expected:02X}, got 0x{response.hex()}{ANSI.RESET}")
+            dev.close()
+            return None
+        dprint(f"Initial ping OK: 0x{challenge:02X} -> 0x{expected:02X}")
+
+        return dev
+
+
+    def TryConnect(self, port, baudrate):
+        dev = self._try_connect(port)
+        if dev is None:
+            return False
         dev.close()
-        return match
+        return True
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected(): self.DEVICE.close()
-        if port is not None and port != self.PORT:
-            return False
 
-        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
-        res = dev.open()
-        if res == -1:
-            dprint(f"Did not find a {self.DEVICE_NAME}")
-            return False
-        elif res != 0:
-            dprint(f"{ANSI.RED}ERROR: Failed to open device: {res}{ANSI.RESET}")
+        dev = self._try_connect(port)
+        if dev is None:
+            self.DEVICE = None
             return False
         self.DEVICE = dev
 
@@ -248,6 +276,9 @@ class GbxDevice(LK_Device):
             self.DEVICE.reset_output_buffer()
 
             cartio_firmware_id = self.DEVICE.get_fw_info()
+            if len(cartio_firmware_id) == 0:
+                dprint("0-byte response to firmware ID request; likely old version that expects USB-Serial handshake")
+                return False
 
             view = memoryview(cartio_firmware_id)
 

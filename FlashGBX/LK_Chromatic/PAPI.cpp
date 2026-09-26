@@ -196,26 +196,6 @@ Streams_t& streams() {
     return instance;
 }
 
-#ifdef _WIN32
-[[nodiscard]]
-uint8_t GetPingCookie() {
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-
-    // Fibonacci Hashing (TAOCP vol 3)
-    // Magic number approach to 1/golden ratio from RC5
-    return (now.QuadPart * 0x9E3779B97F4A7C15ULL) >> 56;
-}
-#else
-[[nodiscard]]
-uint8_t GetPingCookie() {
-    timespec now {};
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    const auto val = (static_cast<uint64_t>(now.tv_sec) * 1'000'000'000) + now.tv_nsec;
-    return (val * 0x9E3779B97F4A7C15ULL) >> 56;
-}
-#endif
-
 struct Worker {
     Worker() {
         _thread = std::jthread { &Worker::thread_main };
@@ -282,32 +262,19 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
 }
 
 
-extern "C" LK_CHROMATIC_EXPORT papi_open_status papi_open(
+extern "C" LK_CHROMATIC_EXPORT int papi_open(
     const uint16_t vendorID,
     const uint16_t productID) {
     dprint("Attempting to open libusb device");
-    if (!mc_usb_open(vendorID, productID)) {
-        return papi_open_status::OpenError;
+    if (const auto ret = mc_usb_open(vendorID, productID); ret != 0) {
+        return ret;
     }
-
-    // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
-    const auto cookie = GetPingCookie();
-    const auto expected = (~cookie) & 0xff;
-
-    dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
-    const auto actual = mc_standalone_ping(cookie);
-    if (actual != expected) {
-        LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
-        mc_usb_close();
-        return papi_open_status::PingError;
-    }
-    dprint("LK_Chromatic: Initial ping OK");
 
     std::ranges::fill(_lk_var8, 0);
     std::ranges::fill(_lk_var16, 0);
     std::ranges::fill(_lk_var32, 0);
 
-    return papi_open_status::Success;
+    return static_cast<int>(papi_open_status::Success);
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
@@ -398,11 +365,17 @@ extern "C" uint16_t papi_get_fw_info(uint8_t* const buffer, const uint16_t count
         static_cast<uint8_t>(Command::Flush),
         0,
     };
-    std::ignore = mc_transport_enqueue_tx(GetSize, sizeof(GetSize));
-    std::ignore = mc_transport_enqueue_rx(buffer, 1);
+
+    buffer[0] = 0;
+    std::ignore = mc_transport_enqueue_tx(GetSize, sizeof(GetSize), 10 /* ms */);
+    std::ignore = mc_transport_enqueue_rx(buffer, 1, 10 /* ms */);
     mc_transport_flush();
 
     const auto size = buffer[0];
+    if (size == 0) {
+        return 0;
+    }
+
     // -1 because we already have the size byte
     const auto toRead = std::min<uint8_t>(size - 1, count - 1);
     if (toRead == 0) {

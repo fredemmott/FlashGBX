@@ -16,12 +16,14 @@ using PAPIStringCallback = void (*)(const char*, uint16_t);
 
 enum class papi_open_status: int {
   Success = 0,
-  OpenError = -1,
-  PingError = -2,
+  DeviceNotFound = 1,
+  InterfaceNotFound = 2,
 };
 
+// Non-negative: papi_open_status
+// Negative: platform-specific code, e.g. libusb_error
 [[nodiscard]]
-LK_CHROMATIC_EXPORT papi_open_status papi_open(uint16_t vendorID, uint16_t productID);
+LK_CHROMATIC_EXPORT int papi_open(uint16_t vendorID, uint16_t productID);
 LK_CHROMATIC_EXPORT void papi_close();
 
 // Returns 1 if open, 0 otherwise

@@ -5,6 +5,7 @@ extern "C" {
 }
 
 #include "MC_impl_common.hpp"
+#include "PAPI.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -127,7 +128,7 @@ struct [[nodiscard]] LibUSBTransfer {
             buffer,
             static_cast<int>(length),
             &LibUSBTransfer::callback,
-            &this->_libUSBCompletionFlag,
+            this,
             timeout);
         SPAMMY(TraceLoggingWriteStop(tla, "LibUSBTransfer::fill()"));
         return *this;
@@ -207,11 +208,10 @@ private:
         _endpoint = std::exchange(other._endpoint, 0);
 
         _transfer = std::exchange(other._transfer, nullptr);
+        _transfer->user_data = this;
 
         _state = std::exchange(other._state, State::Moved);
         _libUSBCompletionFlag = std::exchange(other._libUSBCompletionFlag, 0);
-
-        _transfer->user_data = &_libUSBCompletionFlag;
     }
 
     template<State T, State U>
@@ -268,42 +268,51 @@ LibUSBContext& context() {
 }
 
 struct LibUSBDevice {
+    static constexpr auto DefaultTimeout = LibUSBTransfer::DefaultTimeout;
+
     LibUSBDevice() = delete;
-    LibUSBDevice(
-        LibUSBContext& ctx,
-        const uint16_t vendorID, const uint16_t productID) {
+    LibUSBDevice(const LibUSBDevice&) = delete;
+    LibUSBDevice& operator=(const LibUSBDevice&) = delete;
+
+    LibUSBDevice(LibUSBDevice&& other) noexcept {
+        moveFrom(std::move(other));
+    }
+
+    LibUSBDevice& operator=(LibUSBDevice&& other) noexcept {
+        moveFrom(std::move(other));
+        return *this;
+    }
+
+    static std::expected<LibUSBDevice, int> open(
+        const LibUSBContext& ctx,
+        const uint16_t vendorID,
+        const uint16_t productID) {
         dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x})", vendorID, productID);
 
-        _context = ctx;
-        if (!_context) {
+        if (!ctx) [[unlikely]] {
             LogError("Can't initialize LibUSBDevice without a LibUSBContext");
-            return;
+            abort();
         }
         libusb_device** devices {nullptr};
-        const auto deviceCount = libusb_get_device_list(_context, &devices);
+        const auto deviceCount = libusb_get_device_list(ctx, &devices);
         if (deviceCount < 0) {
             LogError("libusb_get_device_list() failed: {} ('{}')", deviceCount, libusb_error_name(static_cast<libusb_error>(deviceCount)));
-            return;
-        }
-        dprint("libusb_get_device_list() returned {} devices", deviceCount);
-        for (ssize_t i = 0; i < deviceCount; ++i) {
-            libusb_device_descriptor it {};
-            libusb_get_device_descriptor(devices[i], &it);
-            dprint("Device: {:#06x}:{:#06x}", it.idVendor, it.idProduct);
+            return std::unexpected { static_cast<int>(deviceCount) };
         }
 
-        libusb_free_device_list(devices, true);
-        _device = libusb_open_device_with_vid_pid(_context, vendorID, productID);
-        if (!_device) {
+        const auto device = libusb_open_device_with_vid_pid(ctx, vendorID, productID);
+        if (!device) {
             LogError("libusb_open_device_with_vid_pid() did not return a device");
-            return;
+            return std::unexpected { static_cast<int>(papi_open_status::DeviceNotFound) };
         }
-        libusb_set_auto_detach_kernel_driver(_device, true);
+        libusb_set_auto_detach_kernel_driver(device, true);
 
         uint8_t interfaceNumber {};
+        uint8_t epIn {};
+        uint8_t epOut {};
         {
             libusb_config_descriptor* config {};
-            libusb_get_active_config_descriptor(libusb_get_device(_device), &config);
+            libusb_get_active_config_descriptor(libusb_get_device(device), &config);
 
             for (auto i = 0; i < config->bNumInterfaces; ++i) {
                 const auto& interface = config->interface[i].altsetting[0];
@@ -320,7 +329,7 @@ struct LibUSBDevice {
                     continue;
                 }
                 unsigned char buffer[255];
-                const auto count = libusb_get_string_descriptor_ascii(_device, desc, buffer, sizeof(buffer));
+                const auto count = libusb_get_string_descriptor_ascii(device, desc, buffer, sizeof(buffer));
                 if (count < 0) {
                     dprint("Skipping interface {}, failed to get string ({})", interfaceNumber, count);
                     continue;
@@ -334,36 +343,45 @@ struct LibUSBDevice {
 
                 dprint("Matched interface {}: '{}'", interfaceNumber, name);
 
-                for (int i = 0; i < interface.bNumEndpoints; ++i) {
-                    const auto endpoint = interface.endpoint[i];
-                    if (endpoint.bEndpointAddress & LIBUSB_ENDPOINT_IN) {
-                        _epIn = endpoint.bEndpointAddress;
+                epIn = epOut = 0;
+
+                for (int j = 0; j < interface.bNumEndpoints; ++j) {
+                  if (const auto endpoint = interface.endpoint[j];
+                      endpoint.bEndpointAddress & LIBUSB_ENDPOINT_IN) {
+                        epIn = endpoint.bEndpointAddress;
                     } else {
-                        _epOut = endpoint.bEndpointAddress;
+                        epOut = endpoint.bEndpointAddress;
                     }
                 }
-                _interface.emplace(interfaceNumber);
-                break;
+
+                if (epIn && epOut) {
+                    break;
+                }
             }
             libusb_free_config_descriptor(config);
         }
-        if (!(_epIn && _epOut)) {
+        if (!(epIn && epOut)) {
             dprint("Failed to find interface");
-            return;
+            return std::unexpected { static_cast<int>(papi_open_status::InterfaceNotFound) };
         }
 
-        if (const auto err = libusb_claim_interface(_device, interfaceNumber); err != LIBUSB_SUCCESS) {
+        std::optional<uint8_t> interface;
+        if (const auto err = libusb_claim_interface(device, interfaceNumber); err == LIBUSB_SUCCESS) {
+            interface.emplace(interfaceNumber);
+        } else {
+            interface.reset();
             // Expected on Win32
             if (err != LIBUSB_ERROR_NOT_SUPPORTED) {
-                _interface.reset();
                 LogError("Failed to claim interface: \"{}\" ({})", libusb_strerror(err), err);
-                return;
+                return std::unexpected { err };
             }
         }
-        std::ignore = libusb_clear_halt(_device, _epIn);
-        std::ignore = libusb_clear_halt(_device, _epOut);
+        std::ignore = libusb_clear_halt(device, epIn);
+        std::ignore = libusb_clear_halt(device, epOut);
 
-        dprint("Opened libusb device {:#06x}/{:#06x} interface {:#04x}: epIn: {:#04x}, epOut: {:#04x}", vendorID, productID, interfaceNumber,_epIn, _epOut);
+        dprint("Opened libusb device {:#06x}/{:#06x} interface {:#04x}: epIn: {:#04x}, epOut: {:#04x}", vendorID, productID, interfaceNumber,epIn, epOut);
+
+        return LibUSBDevice { ctx, device, interface, epIn, epOut };
     }
 
     ~LibUSBDevice() {
@@ -393,12 +411,7 @@ struct LibUSBDevice {
         return this->transfer(_epIn, data, count, timeout);
     }
 
-    [[nodiscard]]
-    bool valid() const noexcept {
-        return _context && _device && _interface;
-    }
 private:
-    static constexpr auto DefaultTimeout = LibUSBTransfer::DefaultTimeout;
 
     libusb_context* _context {};
     libusb_device_handle* _device {};
@@ -406,12 +419,27 @@ private:
     uint8_t _epIn {};
     uint8_t _epOut {};
 
+    LibUSBDevice(
+        libusb_context* context,
+        libusb_device_handle* device,
+        std::optional<uint8_t> interface,
+        const uint8_t epIn,
+        const uint8_t epOut) noexcept : _context(context), _device { device }, _interface(std::move(interface)), _epIn { epIn }, _epOut { epOut } {}
+
     [[nodiscard]]
-    LibUSBTransfer transfer(const uint8_t endpoint, void* data, const std::size_t count, const unsigned int timeout = 1000) const {
+    LibUSBTransfer transfer(const uint8_t endpoint, void* data, const std::size_t count, const unsigned int timeoutMS) const {
         auto ret = LibUSBTransfer { _device, _context, endpoint};
-        ret.fill(static_cast<uint8_t*>(data), count, timeout);
+        ret.fill(static_cast<uint8_t*>(data), count, timeoutMS);
         return ret;
 
+    }
+
+    void moveFrom(LibUSBDevice&& other) noexcept {
+        _context = std::exchange(other._context, nullptr);
+        _device = std::exchange(other._device, nullptr);
+        _interface = std::exchange(other._interface, std::nullopt);
+        _epIn = std::exchange(other._epIn, 0);
+        _epOut = std::exchange(other._epOut, 0);
     }
 };
 
@@ -425,7 +453,8 @@ template<Operation T>
 [[nodiscard]]
 std::size_t enqueue(
     std::conditional_t<T == Operation::TX, const uint8_t*, uint8_t*> data,
-    const size_t count
+    const size_t count,
+    const unsigned int timeout = LibUSBTransfer::DefaultTimeout
 ) {
     static constexpr bool IsRX = T == Operation::RX;
     auto& counter = IsRX ? counters().rx_enqueued : counters().tx_enqueued;
@@ -443,9 +472,9 @@ std::size_t enqueue(
     for (std::size_t i = 0; i < count; i += MaxChunk) {
         const auto chunk = std::min(i + (64*1024), count) - i;
         if constexpr (IsRX) {
-            ops.emplace_back(device()->read(data + i, chunk));
+            ops.emplace_back(device()->read(data + i, chunk, timeout));
         } else {
-            ops.emplace_back(device()->write(data + i, chunk));
+            ops.emplace_back(device()->write(data + i, chunk, timeout));
         }
         ops.back().submit();
     }
@@ -459,12 +488,12 @@ extern "C" void mc_transport_set_callbacks(const mc_transport_callbacks* new_cal
     callbacks().set(new_callbacks);
 }
 
-extern "C" size_t mc_transport_enqueue_tx(const uint8_t* const data, const size_t count) {
-    return enqueue<Operation::TX>(data, count);
+extern "C" size_t mc_transport_enqueue_tx(const uint8_t* const data, const size_t count, const unsigned int timeoutMS) {
+    return enqueue<Operation::TX>(data, count, timeoutMS ? timeoutMS : LibUSBDevice::DefaultTimeout);
 }
 
-extern "C" size_t mc_transport_enqueue_rx(uint8_t* const data, const size_t count) {
-    return enqueue<Operation::RX>(data, count);
+extern "C" size_t mc_transport_enqueue_rx(uint8_t* const data, const size_t count, const unsigned int timeoutMS) {
+    return enqueue<Operation::RX>(data, count, timeoutMS ? timeoutMS : LibUSBDevice::DefaultTimeout);
 }
 
 extern "C" void mc_transport_flush() {
@@ -474,21 +503,21 @@ extern "C" void mc_transport_flush() {
     if (!transfers().rx.empty()) {
         std::ignore = transfers().rx.back().wait();
     }
+    transfers() = {};
 }
 
-bool mc_usb_open(
+int mc_usb_open(
     const uint16_t vendorID,
     const uint16_t productID) {
     auto& it = device();
     it.reset();
-    it.emplace(context(), vendorID, productID);
-    if (it->valid()) {
-        mc_init();
-        return true;
+    auto device = LibUSBDevice::open(context(), vendorID, productID);
+    if (!device) {
+        return device.error();
     }
-
-    it.reset();
-    return false;
+    it.emplace(std::move(device.value()));
+    mc_init();
+    return static_cast<int>(papi_open_status::Success);
 }
 
 bool mc_usb_is_open() {
