@@ -17,7 +17,6 @@ extern "C" {
 
 namespace {
 
-
 struct counters_t {
     std::size_t tx_enqueued {};
     std::size_t rx_enqueued {};
@@ -272,8 +271,8 @@ struct LibUSBDevice {
     LibUSBDevice() = delete;
     LibUSBDevice(
         LibUSBContext& ctx,
-        const uint16_t vendorID, const uint16_t productID, const uint8_t interfaceNumber) : _interface(interfaceNumber) {
-        dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x}, {})", vendorID, productID, interfaceNumber);
+        const uint16_t vendorID, const uint16_t productID) {
+        dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x})", vendorID, productID);
 
         _context = ctx;
         if (!_context) {
@@ -301,32 +300,63 @@ struct LibUSBDevice {
         }
         libusb_set_auto_detach_kernel_driver(_device, true);
 
+        uint8_t interfaceNumber {};
         {
             libusb_config_descriptor* config {};
             libusb_get_active_config_descriptor(libusb_get_device(_device), &config);
 
-            if (interfaceNumber >= config->bNumInterfaces) {
-                LogError("Invalid interface number: {} >= count {}", interfaceNumber, config->bNumInterfaces);
-                return;
-            }
+            for (auto i = 0; i < config->bNumInterfaces; ++i) {
+                const auto& interface = config->interface[i].altsetting[0];
+                interfaceNumber = interface.bInterfaceNumber;
 
-            const auto interface = config->interface[interfaceNumber].altsetting[0];
-            for (int i = 0; i < interface.bNumEndpoints; ++i) {
-                const auto endpoint = interface.endpoint[i];
-                if (endpoint.bEndpointAddress & LIBUSB_ENDPOINT_IN) {
-                    _epIn = endpoint.bEndpointAddress;
-                } else {
-                    _epOut = endpoint.bEndpointAddress;
+                if (interfaceNumber == 0) {
+                    dprint("Skipping control interface");
+                    continue;
                 }
+
+                const auto desc = interface.iInterface;
+                if (!desc) {
+                    dprint("Skipping interface {}, no string", interfaceNumber);
+                    continue;
+                }
+                unsigned char buffer[255];
+                const auto count = libusb_get_string_descriptor_ascii(_device, desc, buffer, sizeof(buffer));
+                if (count < 0) {
+                    dprint("Skipping interface {}, failed to get string ({})", interfaceNumber, count);
+                    continue;
+                }
+                const std::string_view name(reinterpret_cast<const char*>(buffer), count);
+                static constexpr std::string_view ExpectedName { "Cartridge IO (fredemmott)" };
+                if (name != ExpectedName) {
+                    dprint("Skipping interface {}, '{}' did not match '{}'", interfaceNumber, name, ExpectedName);
+                    continue;
+                }
+
+                dprint("Matched interface {}: '{}'", interfaceNumber, name);
+
+                for (int i = 0; i < interface.bNumEndpoints; ++i) {
+                    const auto endpoint = interface.endpoint[i];
+                    if (endpoint.bEndpointAddress & LIBUSB_ENDPOINT_IN) {
+                        _epIn = endpoint.bEndpointAddress;
+                    } else {
+                        _epOut = endpoint.bEndpointAddress;
+                    }
+                }
+                _interface.emplace(interfaceNumber);
+                break;
             }
             libusb_free_config_descriptor(config);
         }
+        if (!(_epIn && _epOut)) {
+            dprint("Failed to find interface");
+            return;
+        }
 
         if (const auto err = libusb_claim_interface(_device, interfaceNumber); err != LIBUSB_SUCCESS) {
-            _interface.reset();
-            LogError("Failed to claim interface: \"{}\" ({})", libusb_strerror(err), err);
             // Expected on Win32
             if (err != LIBUSB_ERROR_NOT_SUPPORTED) {
+                _interface.reset();
+                LogError("Failed to claim interface: \"{}\" ({})", libusb_strerror(err), err);
                 return;
             }
         }
@@ -448,11 +478,10 @@ extern "C" void mc_transport_flush() {
 
 bool mc_usb_open(
     const uint16_t vendorID,
-    const uint16_t productID,
-    const uint8_t interfaceNumber) {
+    const uint16_t productID) {
     auto& it = device();
     it.reset();
-    it.emplace(context(), vendorID, productID, interfaceNumber);
+    it.emplace(context(), vendorID, productID);
     if (it->valid()) {
         mc_init();
         return true;
@@ -460,6 +489,10 @@ bool mc_usb_open(
 
     it.reset();
     return false;
+}
+
+bool mc_usb_is_open() {
+    return device().has_value();
 }
 
 void mc_usb_close() {

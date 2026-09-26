@@ -27,6 +27,7 @@ add_library(
   MC_transport.h
 
   LK2MC.cpp
+  Command.hpp
 
   PAPI.hpp
   PAPI.cpp

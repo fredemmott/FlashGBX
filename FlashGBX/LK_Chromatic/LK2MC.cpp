@@ -4,6 +4,7 @@ extern "C" {
 #include "MC_transport.h"
 }
 
+#include "Command.hpp"
 #include "MC_impl_common.hpp"
 
 #include <algorithm>
@@ -19,26 +20,6 @@ extern "C" {
 #include <cstring>
 
 namespace {
-
-enum class Command : uint8_t {
-    NOP = 0,
-    Ping = 1,
-    Delay = 2,
-    Flush = 3,
-
-    SetAddressMSB = 4,
-    SetAddressLSB = 5,
-    SetOutputEnable = 6,
-    SetData = 7,
-    GetData = 8,
-    SetPinsA = 9,
-    SetPinsB = 10,
-    VerifyData = 11,
-    VerifyStatusRegister = 12,
-    SetStatusRegisterMask = 13,
-    SetStatusRegisterValue = 14,
-    GetStateBits = 15,
-};
 
 enum class StateBits : uint8_t {
     CartPresent = 1 << 0,
@@ -67,6 +48,7 @@ constexpr bool ProducesRX(const Command cmd) noexcept {
     case VerifyData:
     case VerifyStatusRegister:
     case GetStateBits:
+    case GetFWInfo:
         return true;
     default:
         return false;

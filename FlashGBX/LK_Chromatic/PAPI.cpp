@@ -1,3 +1,4 @@
+#include "Command.hpp"
 extern "C" {
 #define LK_DEVICE_NO_DPRINT
 #include "LK.h"
@@ -283,10 +284,9 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
 
 extern "C" LK_CHROMATIC_EXPORT papi_open_status papi_open(
     const uint16_t vendorID,
-    const uint16_t productID,
-    const uint8_t interfaceNumber) {
+    const uint16_t productID) {
     dprint("Attempting to open libusb device");
-    if (!mc_usb_open(vendorID, productID, interfaceNumber)) {
+    if (!mc_usb_open(vendorID, productID)) {
         return papi_open_status::OpenError;
     }
 
@@ -312,6 +312,10 @@ extern "C" LK_CHROMATIC_EXPORT papi_open_status papi_open(
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
     mc_usb_close();
+}
+
+extern "C" LK_CHROMATIC_EXPORT int papi_is_open() {
+    return mc_usb_is_open() ? 1 : 0;
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(PAPIStringCallback cb) {
@@ -382,4 +386,43 @@ extern "C" void lk_send_to_host(const uint8_t* data, const uint16_t count) {
 
 extern "C" void lk_recv_from_host(uint8_t* data, const uint16_t count) {
     streams().papi_to_lk.read(data, count);
+}
+
+extern "C" uint16_t papi_get_fw_info(uint8_t* const buffer, const uint16_t count) {
+    if (!(buffer && count)) {
+        return 0;
+    }
+    static constexpr uint8_t GetSize [] {
+        static_cast<uint8_t>(Command::GetFWInfo),
+        0,
+        static_cast<uint8_t>(Command::Flush),
+        0,
+    };
+    std::ignore = mc_transport_enqueue_tx(GetSize, sizeof(GetSize));
+    std::ignore = mc_transport_enqueue_rx(buffer, 1);
+    mc_transport_flush();
+
+    const auto size = buffer[0];
+    // -1 because we already have the size byte
+    const auto toRead = std::min<uint8_t>(size - 1, count - 1);
+    if (toRead == 0) {
+        return 1;
+    }
+
+    std::basic_string<uint8_t> commands;
+    commands.resize_and_overwrite(
+        2 * (toRead + 1), // +1 again to have space for Command::Flush
+        [](uint8_t* const p, const std::size_t n) {
+            for (std::size_t i = 0; i < n; i += 2) {
+                p[i] = static_cast<uint8_t>(Command::GetFWInfo);
+                p[i + 1] = (i / 2) + 1;
+            }
+            p[n - 2] = static_cast<uint8_t>(Command::Flush);
+            return n;
+        }
+    );
+    std::ignore = mc_transport_enqueue_tx(commands.data(), commands.size());
+    std::ignore = mc_transport_enqueue_rx(buffer + 1, toRead);
+    mc_transport_flush();
+    return size;
 }

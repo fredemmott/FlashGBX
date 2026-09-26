@@ -20,8 +20,16 @@ enum class papi_open_status: int {
   PingError = -2,
 };
 
-LK_CHROMATIC_EXPORT papi_open_status papi_open(uint16_t vendorID, uint16_t productID, uint8_t interfaceNumber);
+[[nodiscard]]
+LK_CHROMATIC_EXPORT papi_open_status papi_open(uint16_t vendorID, uint16_t productID);
 LK_CHROMATIC_EXPORT void papi_close();
+
+// Returns 1 if open, 0 otherwise
+[[nodiscard]]
+LK_CHROMATIC_EXPORT int papi_is_open();
+
+[[nodiscard]]
+LK_CHROMATIC_EXPORT uint16_t papi_get_fw_info(uint8_t*, uint16_t);
 
 LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t*, uint16_t);
 LK_CHROMATIC_EXPORT void papi_send_to_lk_reset_output_buffer();

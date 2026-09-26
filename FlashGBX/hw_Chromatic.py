@@ -40,11 +40,14 @@ except ImportError:
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
-    ID_PREFIX = b"fredemmott/CartIO\x00"
-    REQUIRED_FW_VERSION = "2026.09.20.0"
+    REQUIRED_FW_VERSION = "2026.09.25.0"
+
+    DEVICE : MicrocodeDevice | None = None
 
     USB_VENDOR_ID = 0x374e
     USB_PRODUCT_ID = 0x0101
+
+    PORT = f"libusb:{USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x}"
 
     # - Align with 512-byte USB packet sizes
     # - Fit in a uint16 as the LK protocol requires it
@@ -80,8 +83,14 @@ class GbxDevice(LK_Device):
         self._papi.papi_fpga_reset.argtypes = []
         self._papi.papi_fpga_reset.restype = ctypes.c_int
 
-        self._papi.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8]
+        self._papi.papi_open.argtypes = [ctypes.c_uint16, ctypes.c_uint16]
         self._papi.papi_open.restype = ctypes.c_int
+
+        self._papi.papi_is_open.argtypes = []
+        self._papi.papi_is_open.restype = ctypes.c_int
+
+        self._papi.papi_get_fw_info.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
+        self._papi.papi_get_fw_info.restype = ctypes.c_uint16
 
         self._papi.papi_close.argtypes = []
         self._papi.papi_close.restype = None
@@ -136,75 +145,73 @@ class GbxDevice(LK_Device):
         message = data.decode('utf-8')
         dprint(message)
 
+    def TryConnect(self, port, baudrate):
+        if port is not None and port != self.PORT:
+            return False
+        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
+        res = dev.open()
+        if res != 0:
+            dprint(f"{ANSI.RED}ERROR: Failed to open device: {res}{ANSI.RESET}")
+            dev.close()
+            return False
+        match = self.LoadFirmwareVersion()
+        dev.close()
+        return match
+
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected(): self.DEVICE.close()
+        if port is not None and port != self.PORT:
+            return False
+
+        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
+        res = dev.open()
+        if res == -1:
+            dprint(f"Did not find a {self.DEVICE_NAME}")
+            return False
+        elif res != 0:
+            dprint(f"{ANSI.RED}ERROR: Failed to open device: {res}{ANSI.RESET}")
+            return False
+        self.DEVICE = dev
+
+        if not self.LoadFirmwareVersion():
+            self.DEVICE = None
+            dev.close()
+            return False
+
+
+        if self.FW is None or self.FW == {}:
+            self.DEVICE = None
+            dev.close()
+            return False
+
+        dprint(f"Found a {self.DEVICE_NAME}")
+        dprint("Firmware information:", self.FW)
+
         conn_msg = []
-        ports = []
-        if port is not None:
-            ports = [ port ]
-        else:
-            comports = serial.tools.list_ports.comports()
-            for i in range(0, len(comports)):
-                if comports[i].vid == self.USB_VENDOR_ID and comports[i].pid == self.USB_PRODUCT_ID:
-                    ports.append(comports[i].device)
-            if len(ports) == 0: return False
 
-        for i in range(0, len(ports)):
-            # The usual thing for other devices is to call `TryConnect`, then if that succeeds, reconnect.
-            #
-            # That means we need to go through the whole handshake multiple times, which takes more time,
-            # and makes a mildly concerning flickering noise as:
-            #
-            # - a complete handshake turns off the screen and audio
-            # - disconnecting reconnects them
-            #
-            # Just connect directly instead :)
-            try:
-                dev = serial.Serial(ports[i], max_baud, timeout=0.1, exclusive=True)
-            except (SerialException, OSError) as e:
-                dprint(f"Couldn’t connect to port {ports[i]:s} at baudrate {max_baud:d}:", e)
-                return False
-            self.DEVICE = dev
-            if not self.LoadFirmwareVersion():
-                self.DEVICE = None
-                dev.close()
-                continue
+        if self.DEVICE is None or not self.IsConnected():
+            self.DEVICE = None
+            if self.FW is not None:
+                conn_msg.append([0, "Couldn’t communicate with the " + self.DEVICE_NAME + " device. Please disconnect and reconnect the device, then try again."])
+            return False
+        elif self.FW is None:
+            dev.close()
+            self.DEVICE = None
+            return False
+        elif "cfw_id" not in self.FW or self.FW["cfw_id"] != 'L': # Not a CFW by FredEmmott
+            dprint("Incompatible firmware:", self.FW)
+            dev.close()
+            self.DEVICE = None
+            return False
 
+        self.DEVICE.timeout = self.DEVICE_TIMEOUT
 
-            if self.FW is None or self.FW == {}:
-                self.DEVICE = None
-                dev.close()
-                continue
+        conn_msg.append([0, "No help is currently available when using a ModRetro Chromatic device"])
 
-            dprint(f"Found a {self.DEVICE_NAME}")
-            dprint("Firmware information:", self.FW)
-            # dprint("Baud rate:", self.BAUDRATE)
+        # Load Flash Cartridge Handlers
+        self.UpdateFlashCarts(flashcarts)
 
-            if self.DEVICE is None or not self.IsConnected():
-                self.DEVICE = None
-                if self.FW is not None:
-                    conn_msg.append([0, "Couldn’t communicate with the " + self.DEVICE_NAME + " device on port " + ports[i] + ". Please disconnect and reconnect the device, then try again."])
-                continue
-            elif self.FW is None:
-                dev.close()
-                self.DEVICE = None
-                continue
-            elif "cfw_id" not in self.FW or self.FW["cfw_id"] != 'L': # Not a CFW by FredEmmott
-                dprint("Incompatible firmware:", self.FW)
-                dev.close()
-                self.DEVICE = None
-                continue
-
-            self.PORT = ports[i]
-            self.DEVICE.timeout = self.DEVICE_TIMEOUT
-
-            conn_msg.append([0, "No help is currently available when using a ModRetro Chromatic device"])
-
-            # Load Flash Cartridge Handlers
-            self.UpdateFlashCarts(flashcarts)
-
-            # Stop after first found device
-            break
+        # Stop after first found device
 
         return conn_msg
 
@@ -229,38 +236,20 @@ class GbxDevice(LK_Device):
             if self.DEVICE is None:
                 self.FW = None
                 return False
-            self.DEVICE._haveFredEmmottMicrocode = self._activate_cartridge_io_mode()
+            self.DEVICE._haveFredEmmottMicrocode = self._query_lk_firmware_version()
         return self.DEVICE._haveFredEmmottMicrocode
 
 
     def _query_firmware_version(self) -> bool:
+        if self.DEVICE is None:
+            return False
         try:
-            self.DEVICE.timeout = 0.075
             self.DEVICE.reset_input_buffer()
             self.DEVICE.reset_output_buffer()
 
-            # Reset/exit ModRetro mode
-            #
-            # This command does not produce a response; it:
-            # - disconnects the UART from the USB serial device; after this, any *new* data is from
-            #   our protocol, not the UART
-            # - makes it listen for other commands, like the ID command below
-            self._write(bytearray(b'\xAA\x55\xF0'))
+            cartio_firmware_id = self.DEVICE.get_fw_info()
 
-            # We reset the OS/driver/host controller buffers above, but check if there's anything
-            # in the device buffers; if so, drain it
-            #
-            # This is needed on macOS, but not on Windows
-            for _ in range(5):
-                # Timeout is effectively the loop delay
-                if len(self.DEVICE.read(4096)) == 0:
-                    break
-
-            # Now that we don't have anything pending, send the ID command
-            self._write(bytearray(b'\xAA\x55\x90'))
-            time.sleep(0.01)
-            device_id = self.DEVICE.read(self.DEVICE.in_waiting)
-            view = memoryview(device_id)
+            view = memoryview(cartio_firmware_id)
 
             def consume(n: int):
                 nonlocal view
@@ -268,17 +257,13 @@ class GbxDevice(LK_Device):
                 view = view[n:]
                 return ret
 
-            match = False
-            while len(view) > 2:
-                section_len = int.from_bytes(consume(2), "big", signed=False)
-                if len(view) < (section_len - 2): return False
-                if consume(len(self.ID_PREFIX)) != self.ID_PREFIX: continue
-                match = True
-                break
-
-            if not match:
-                dprint(f"No matching section found in {len(view)} byte ID response")
+            size = consume(1)[0]
+            if size != len(cartio_firmware_id):
+                dprint(f"Expected {len(cartio_firmware_id)} bytes, got {size}")
                 return False
+
+            if size < 8:
+                dprint(f"Expected at least 8 bytes, got {size}")
 
             # BCD
             year = consume(2).hex()
@@ -289,14 +274,12 @@ class GbxDevice(LK_Device):
 
             upstream_major = consume(1)[0]
             upstream_minor = consume(1)[0]
-            usb_interface = consume(1)[0]
 
             self.FW["device_name"] = self.DEVICE_NAME
             self.FW["pcb_name"] = self.DEVICE_NAME
             self.FW["fw_dt"] = f"{year}-{month}-{day}"
             self.FW["hw_Chromatic/fw_ver/CartIO"] = f"{year}.{month}.{day}.{revision}"
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
-            self.FW["hw_Chromatic/CartIO_usb_if"] = usb_interface
 
             if self.FW["hw_Chromatic/fw_ver/CartIO"] != self.REQUIRED_FW_VERSION:
                 dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version (need v{self.REQUIRED_FW_VERSION})")
@@ -315,20 +298,6 @@ class GbxDevice(LK_Device):
             except:
                 pass
             return False
-
-    def _activate_cartridge_io_mode(self) -> bool:
-        self._write(bytearray(b'fredemmott/CartIO\0')) # Switch mode
-        time.sleep(0.10)
-
-        self.DEVICE.__class__ = MicrocodeDevice
-        cast(MicrocodeDevice, self.DEVICE).init_chromatic(self._papi)
-
-        status = self._papi.papi_open(self.USB_VENDOR_ID, self.USB_PRODUCT_ID, self.FW["hw_Chromatic/CartIO_usb_if"])
-        if status != 0:
-            dprint(f"{ANSI.RED}Failed to open device: {status}{ANSI.RESET}")
-            return False
-
-        return self._query_lk_firmware_version()
 
     def _program_sram(self) -> bool:
         app = None
