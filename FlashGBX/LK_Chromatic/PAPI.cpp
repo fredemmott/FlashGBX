@@ -196,6 +196,14 @@ struct Worker {
     Worker() {
         _thread = std::jthread { &Worker::thread_main };
     }
+    ~Worker() {
+        mc_transport_flush();
+    }
+
+    Worker(const Worker&) = delete;
+    Worker(Worker&&) = delete;
+    Worker& operator=(const Worker&) = delete;
+    Worker& operator=(Worker&&) = delete;
 private:
     std::jthread _thread;
 
@@ -230,11 +238,24 @@ auto& worker() {
     static std::optional<Worker> worker;
     return worker;
 }
-void ensure_worker() {
-    if (!worker()) {
-        worker().emplace();
+
+struct SingleThreadedSection {
+    SingleThreadedSection() : _hadWorker(worker().has_value()) {
+        worker().reset();
     }
-}
+    ~SingleThreadedSection() {
+        if (_hadWorker) {
+            worker().emplace();
+        }
+    }
+
+    SingleThreadedSection(const SingleThreadedSection&) = delete;
+    SingleThreadedSection(SingleThreadedSection&&) = delete;
+    SingleThreadedSection& operator=(const SingleThreadedSection&) = delete;
+    SingleThreadedSection& operator=(SingleThreadedSection&&) = delete;
+private:
+    bool _hadWorker {};
+};
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_recv_from_lk(uint8_t* data, const uint16_t count) {
@@ -263,7 +284,9 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
         std::memcpy(dst, src, n);
     });
 
-    ensure_worker();
+    if (!worker().has_value()) {
+        worker().emplace();
+    }
 
     SPAMMY(TraceLoggingWriteStop(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
 }
@@ -286,7 +309,6 @@ extern "C" LK_CHROMATIC_EXPORT int papi_open(
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
     worker().reset();
-    mc_transport_flush();
     mc_usb_close();
 }
 
@@ -330,13 +352,9 @@ extern "C" void mc_on_error(const char* const str, const std::size_t length) {
 }
 
 extern "C" void papi_send_to_lk_reset_output_buffer() {
-    worker().reset();
+    const SingleThreadedSection guard;
 
     streams().papi_to_lk.clear_write_buffer();
-
-    if (mc_transport_is_open()) {
-        worker().emplace();
-    }
 }
 
 extern "C" void papi_send_to_lk_flush() {
@@ -350,13 +368,9 @@ extern "C" uint16_t papi_recv_from_lk_pending_count() {
 }
 
 extern "C" void papi_recv_from_lk_reset_input_buffer() {
-    worker().reset();
+    const SingleThreadedSection guard;
 
     streams().lk_to_papi.clear_read_buffer();
-
-    if (mc_transport_is_open()) {
-        worker().emplace();
-    }
 }
 
 ///// implement LK host IO functions using the PAPI buffers //////
