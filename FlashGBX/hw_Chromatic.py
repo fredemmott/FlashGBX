@@ -397,7 +397,7 @@ class GbxDevice(LK_Device):
                         app.processEvents()
                 except SerialException:
                     continue
-            return True
+            return False
         except Exception as e:
             return False
         finally:
