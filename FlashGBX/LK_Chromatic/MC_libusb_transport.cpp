@@ -134,11 +134,14 @@ struct [[nodiscard]] LibUSBTransfer {
         return *this;
     }
 
-    LibUSBTransfer& submit() {
+    [[nodiscard]]
+    std::expected<void, libusb_error> submit() {
         transition<State::Filled, State::Submitted>();
 
-        libusb_submit_transfer(_transfer);
-        return *this;
+        if (const auto ret = libusb_submit_transfer(_transfer); ret != 0) {
+            return std::unexpected { static_cast<libusb_error>(ret) };
+        }
+        return {};
     }
 
     [[nodiscard]]
@@ -476,7 +479,14 @@ std::size_t enqueue(
         } else {
             ops.emplace_back(device()->write(data + i, chunk, timeout));
         }
-        ops.back().submit();
+        if (const auto ret = ops.back().submit(); !ret.has_value()) {
+            LogError(
+                "Failed to submit transfer: {} ('{}') - device unplugged?",
+                static_cast<int>(ret.error()),
+                libusb_error_name(ret.error()));
+            ops.clear();
+            return 0;
+        }
     }
 
     return after;
@@ -488,11 +498,11 @@ extern "C" void mc_transport_set_callbacks(const mc_transport_callbacks* new_cal
     callbacks().set(new_callbacks);
 }
 
-extern "C" size_t mc_transport_enqueue_tx(const uint8_t* const data, const size_t count, const unsigned int timeoutMS) {
+extern "C" [[nodiscard]] size_t mc_transport_enqueue_tx(const uint8_t* const data, const size_t count, const unsigned int timeoutMS) {
     return enqueue<Operation::TX>(data, count, timeoutMS ? timeoutMS : LibUSBDevice::DefaultTimeout);
 }
 
-extern "C" size_t mc_transport_enqueue_rx(uint8_t* const data, const size_t count, const unsigned int timeoutMS) {
+extern "C" [[nodiscard]] size_t mc_transport_enqueue_rx(uint8_t* const data, const size_t count, const unsigned int timeoutMS) {
     return enqueue<Operation::RX>(data, count, timeoutMS ? timeoutMS : LibUSBDevice::DefaultTimeout);
 }
 

@@ -204,12 +204,15 @@ struct Worker {
     Worker(Worker&&) = delete;
     Worker& operator=(const Worker&) = delete;
     Worker& operator=(Worker&&) = delete;
+
+    [[nodiscard]] operator bool() const noexcept {
+        return _thread.joinable();
+    }
 private:
     std::jthread _thread;
 
     static void thread_main(const std::stop_token& stop) {
         SET_THREAD_NAME("LK -> Microcode worker");
-        dprint("start worker");
 
         while (!stop.stop_requested()) {
             uint8_t cmd {};
@@ -222,7 +225,10 @@ private:
                     0,
                 };
                 static_assert(std::size(KeepAlive) == BytesPerCommand);
-                std::ignore = mc_transport_enqueue_tx(KeepAlive, BytesPerCommand);
+                if (!mc_transport_enqueue_tx(KeepAlive, BytesPerCommand)) {
+                    LogError("Failed to enqueue keep-alive NOP, shutting down worker. Device unplugged?");
+                    break;
+                }
                 continue;
             }
             SPAMMY(TraceLoggingThreadActivity<gTL> tla);
@@ -230,7 +236,6 @@ private:
             mc_exec(cmd);
             SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
         }
-        dprint("Stopping worker");
         UNSET_THREAD_NAME();
     }
 };
@@ -240,9 +245,10 @@ auto& worker() {
 }
 
 struct SingleThreadedSection {
-    SingleThreadedSection() : _hadWorker(worker().has_value()) {
+    SingleThreadedSection() : _hadWorker(worker() && *worker()) {
         worker().reset();
     }
+
     ~SingleThreadedSection() {
         if (_hadWorker) {
             worker().emplace();
@@ -284,8 +290,9 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
         std::memcpy(dst, src, n);
     });
 
-    if (!worker().has_value()) {
-        worker().emplace();
+    if (auto& w = worker(); !(w && *w)) {
+        w.reset();
+        w.emplace();
     }
 
     SPAMMY(TraceLoggingWriteStop(tla, "papi_send_to_lk()", TraceLoggingValue(count, "count")));
