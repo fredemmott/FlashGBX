@@ -22,6 +22,8 @@ enum class Command : uint8_t {
   SetStatusRegisterMask = 13,
   SetStatusRegisterValue = 14,
   GetStateBits = 15,
+
   GetFWInfo = 16,
+  Bye = 17
 };
 

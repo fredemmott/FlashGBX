@@ -40,7 +40,7 @@ except ImportError:
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
-    REQUIRED_FW_VERSION = "2026.09.25.0"
+    REQUIRED_FW_VERSION = "2026.09.27.0"
 
     DEVICE : MicrocodeDevice | None = None
 
