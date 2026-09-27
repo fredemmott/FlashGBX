@@ -27,6 +27,7 @@ add_library(
   MC_transport.h
 
   LK2MC.cpp
+  Command.hpp
 
   PAPI.hpp
   PAPI.cpp
@@ -34,7 +35,7 @@ add_library(
   PAPI_fpga.cpp
   PAPI_fpga.hpp
 
-  MC_libusb_device.cpp
+  MC_libusb_transport.cpp
 )
 
 set_target_properties(

@@ -30,12 +30,15 @@ struct mc_transport_callbacks {
 void mc_transport_set_callbacks(const mc_transport_callbacks*);
 void mc_transport_flush();
 
+[[nodiscard]]
+bool mc_transport_is_open();
+
 /* returns cumulative count when this is finished */
 [[nodiscard]]
-size_t mc_transport_enqueue_tx(const uint8_t* data, size_t count);
+size_t mc_transport_enqueue_tx(const uint8_t* data, size_t count, unsigned int timeoutMS = 0);
 /* returns cumulative count when this is finished */
 [[nodiscard]]
-size_t mc_transport_enqueue_rx(uint8_t* data, size_t count);
+size_t mc_transport_enqueue_rx(uint8_t* data, size_t count, unsigned int timeoutMS = 0);
 
 /* message will have a null terminator, but length *does not* include the
  * null terminator */

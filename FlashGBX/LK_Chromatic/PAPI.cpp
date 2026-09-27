@@ -1,3 +1,4 @@
+#include "Command.hpp"
 extern "C" {
 #define LK_DEVICE_NO_DPRINT
 #include "LK.h"
@@ -9,8 +10,10 @@ extern "C" {
 
 #include <algorithm>
 #include <bit>
+#include <condition_variable>
 #include <format>
 #include <functional>
+#include <mutex>
 #include <thread>
 #include <stop_token>
 
@@ -48,18 +51,22 @@ struct ContiguousSPSCStream {
         std::invoke(std::forward<Fn>(f), span.data(), count);
         _writePos.store(offset + count, std::memory_order_release);
         _writePos.notify_one();
-        _eventSeq.fetch_add(1, std::memory_order_release);
-        _eventSeq.notify_one();
+        _cv.notify_one();
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
     }
 
     void read(uint8_t* const dest, const std::size_t count) {
         // can't be cancelled if we don't have a stop_token
-        std::ignore = read(dest, count, {});
+        std::ignore = read(dest, count, std::chrono::steady_clock::duration::max(), {});
     }
 
     [[nodiscard]]
-    bool read(uint8_t* const dest, const std::size_t count, const std::stop_token& cancel) {
+    bool read(uint8_t* const dest, const std::size_t count, const std::chrono::steady_clock::duration timeout, const std::stop_token& cancel) {
+        using duration = std::chrono::steady_clock::duration;
+        const auto timeout_at =
+            ((duration::max() - timeout) > duration::zero())
+                ? std::chrono::steady_clock::now() + timeout
+                : std::chrono::steady_clock::time_point::max();
         SPAMMY(TraceLoggingThreadActivity<gTL> tla);
         SPAMMY(TraceLoggingWriteStart(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
@@ -90,17 +97,20 @@ struct ContiguousSPSCStream {
                 // - extremely slow operations like chip erase
                 // - user input
                 if ((++spinCount & _timeoutCheckMask) == 0) {
-                    const auto now = std::chrono::steady_clock::now();
-                    if (now - spinSince >= std::chrono::milliseconds(10)) {
-                        if (!this->wait_until_have_at_least_n_bytes(count, cancel)) {
-                            return false;
-                        }
-                        break;
-                    }
+                  const auto now = std::chrono::steady_clock::now();
                     if (now - lastTimeoutCheckAt < std::chrono::microseconds(100)) {
                         _timeoutCheckMask = (_timeoutCheckMask << 1) | 1;
                     }
-                    lastTimeoutCheckAt = now;
+
+                    if (now - spinSince < std::chrono::milliseconds(10)) {
+                        lastTimeoutCheckAt = now;
+                        continue;
+                    }
+
+                    if (!this->wait_until_readable(count, cancel, timeout_at)) {
+                        return false;
+                    }
+                    break;
                 }
 
 #ifdef _WIN32
@@ -139,33 +149,19 @@ struct ContiguousSPSCStream {
     }
 
     [[nodiscard]]
-    bool wait_until_have_at_least_n_bytes(const std::size_t count, const std::stop_token& token) {
+    bool wait_until_readable(
+        const std::size_t count,
+        const std::stop_token& stop,
+        const std::chrono::steady_clock::time_point timeout_at) {
         const auto readPos = _readPos.load(std::memory_order_relaxed);
-
-        auto seq = _eventSeq.load(std::memory_order_acquire);
-        auto writePos = _writePos.load(std::memory_order_acquire);
-        if (writePos - readPos >= count) {
+        if (_writePos.load(std::memory_order_acquire) - readPos >= count) {
             return true;
         }
 
-        const std::stop_callback callback {
-            token,
-            [this] {
-                _eventSeq.fetch_add(1, std::memory_order_release);
-                _eventSeq.notify_one();
-            }
-        };
-
-        while (writePos - readPos < count) {
-            if (token.stop_requested()) {
-                return false;
-            }
-            _eventSeq.wait(seq);
-            seq = _eventSeq.load(std::memory_order_relaxed);
-            writePos = _writePos.load(std::memory_order_acquire);
-        }
-
-        return true;
+        std::unique_lock lock { _cvMutex };
+        return _cv.wait_until(lock, stop, timeout_at, [this, readPos, count] {
+            return _writePos.load(std::memory_order_acquire) - readPos >= count;
+        });
     }
 
 private:
@@ -178,7 +174,8 @@ private:
     std::atomic<std::size_t> _readPos {};
     std::atomic<std::size_t> _writePos {};
 
-    std::atomic<std::size_t> _eventSeq {};
+    std::mutex _cvMutex;
+    std::condition_variable_any _cv;
 
     const char* const _label;
 
@@ -195,26 +192,6 @@ Streams_t& streams() {
     return instance;
 }
 
-#ifdef _WIN32
-[[nodiscard]]
-uint8_t GetPingCookie() {
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-
-    // Fibonacci Hashing (TAOCP vol 3)
-    // Magic number approach to 1/golden ratio from RC5
-    return (now.QuadPart * 0x9E3779B97F4A7C15ULL) >> 56;
-}
-#else
-[[nodiscard]]
-uint8_t GetPingCookie() {
-    timespec now {};
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    const auto val = (static_cast<uint64_t>(now.tv_sec) * 1'000'000'000) + now.tv_nsec;
-    return (val * 0x9E3779B97F4A7C15ULL) >> 56;
-}
-#endif
-
 struct Worker {
     Worker() {
         _thread = std::jthread { &Worker::thread_main };
@@ -224,18 +201,29 @@ private:
 
     static void thread_main(const std::stop_token& stop) {
         SET_THREAD_NAME("LK -> Microcode worker");
+        dprint("start worker");
 
         while (!stop.stop_requested()) {
             uint8_t cmd {};
-            if (!streams().papi_to_lk.read(&cmd, 1, stop)) {
-                UNSET_THREAD_NAME();
-                return;
+            if (!streams().papi_to_lk.read(&cmd, 1, std::chrono::milliseconds(200), stop)) {
+                if (stop.stop_requested()) {
+                    break;
+                }
+                static constexpr uint8_t KeepAlive[] = {
+                    static_cast<uint8_t>(Command::NOP),
+                    0,
+                };
+                static_assert(std::size(KeepAlive) == BytesPerCommand);
+                std::ignore = mc_transport_enqueue_tx(KeepAlive, BytesPerCommand);
+                continue;
             }
             SPAMMY(TraceLoggingThreadActivity<gTL> tla);
             SPAMMY(TraceLoggingWriteStart(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
             mc_exec(cmd);
             SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
         }
+        dprint("Stopping worker");
+        UNSET_THREAD_NAME();
     }
 };
 auto& worker() {
@@ -281,37 +269,29 @@ extern "C" LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t* data, const uint16_
 }
 
 
-extern "C" LK_CHROMATIC_EXPORT papi_open_status papi_open(
+extern "C" LK_CHROMATIC_EXPORT int papi_open(
     const uint16_t vendorID,
-    const uint16_t productID,
-    const uint8_t interfaceNumber) {
+    const uint16_t productID) {
     dprint("Attempting to open libusb device");
-    if (!mc_usb_open(vendorID, productID, interfaceNumber)) {
-        return papi_open_status::OpenError;
+    if (const auto ret = mc_usb_open(vendorID, productID); ret != 0) {
+        return ret;
     }
-
-    // Doesn't need to be timestamp, just want to make sure that the response isn't hardcoded
-    const auto cookie = GetPingCookie();
-    const auto expected = (~cookie) & 0xff;
-
-    dprint("Sending ping: {:#04x} -> {:#04x}", cookie, expected);
-    const auto actual = mc_standalone_ping(cookie);
-    if (actual != expected) {
-        LogError("Ping response command mismatch - received {:#04x}, expected {:#04x}", actual, expected);
-        mc_usb_close();
-        return papi_open_status::PingError;
-    }
-    dprint("LK_Chromatic: Initial ping OK");
 
     std::ranges::fill(_lk_var8, 0);
     std::ranges::fill(_lk_var16, 0);
     std::ranges::fill(_lk_var32, 0);
 
-    return papi_open_status::Success;
+    return static_cast<int>(papi_open_status::Success);
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
+    worker().reset();
+    mc_transport_flush();
     mc_usb_close();
+}
+
+extern "C" LK_CHROMATIC_EXPORT int papi_is_open() {
+    return mc_transport_is_open() ? 1 : 0;
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(PAPIStringCallback cb) {
@@ -353,6 +333,10 @@ extern "C" void papi_send_to_lk_reset_output_buffer() {
     worker().reset();
 
     streams().papi_to_lk.clear_write_buffer();
+
+    if (mc_transport_is_open()) {
+        worker().emplace();
+    }
 }
 
 extern "C" void papi_send_to_lk_flush() {
@@ -369,6 +353,10 @@ extern "C" void papi_recv_from_lk_reset_input_buffer() {
     worker().reset();
 
     streams().lk_to_papi.clear_read_buffer();
+
+    if (mc_transport_is_open()) {
+        worker().emplace();
+    }
 }
 
 ///// implement LK host IO functions using the PAPI buffers //////
@@ -382,4 +370,49 @@ extern "C" void lk_send_to_host(const uint8_t* data, const uint16_t count) {
 
 extern "C" void lk_recv_from_host(uint8_t* data, const uint16_t count) {
     streams().papi_to_lk.read(data, count);
+}
+
+extern "C" uint16_t papi_get_fw_info(uint8_t* const buffer, const uint16_t count) {
+    if (!(buffer && count)) {
+        return 0;
+    }
+    static constexpr uint8_t GetSize [] {
+        static_cast<uint8_t>(Command::GetFWInfo),
+        0,
+        static_cast<uint8_t>(Command::Flush),
+        0,
+    };
+
+    buffer[0] = 0;
+    std::ignore = mc_transport_enqueue_tx(GetSize, sizeof(GetSize), 10 /* ms */);
+    std::ignore = mc_transport_enqueue_rx(buffer, 1, 10 /* ms */);
+    mc_transport_flush();
+
+    const auto size = buffer[0];
+    if (size == 0) {
+        return 0;
+    }
+
+    // -1 because we already have the size byte
+    const auto toRead = std::min<uint8_t>(size - 1, count - 1);
+    if (toRead == 0) {
+        return 1;
+    }
+
+    std::basic_string<uint8_t> commands;
+    commands.resize_and_overwrite(
+        2 * (toRead + 1), // +1 again to have space for Command::Flush
+        [](uint8_t* const p, const std::size_t n) {
+            for (std::size_t i = 0; i < n; i += 2) {
+                p[i] = static_cast<uint8_t>(Command::GetFWInfo);
+                p[i + 1] = (i / 2) + 1;
+            }
+            p[n - 2] = static_cast<uint8_t>(Command::Flush);
+            return n;
+        }
+    );
+    std::ignore = mc_transport_enqueue_tx(commands.data(), commands.size());
+    std::ignore = mc_transport_enqueue_rx(buffer + 1, toRead);
+    mc_transport_flush();
+    return size;
 }
