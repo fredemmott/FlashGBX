@@ -1093,8 +1093,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
 		if update_check and update_check.lower() == "enabled":
 			print("")
-			url = "https://api.github.com/repos/Lesserkuma/FlashGBX/releases/latest"
-			site = "https://github.com/Lesserkuma/FlashGBX/releases/latest"
+			url = "https://api.github.com/repos/fredemmott/FlashGBX/releases/latest"
+			site = "https://github.com/fredemmott/FlashGBX/releases/latest"
 			try:
 				ret = requests.get(url, allow_redirects=True, timeout=1.5)
 			except requests.exceptions.ConnectTimeout as e:
@@ -1111,7 +1111,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 				try:
 					ret = json.loads(ret)
 					if 'tag_name' in ret:
-						latest_version = str(ret['tag_name'])
+						latest_version = str(ret['tag_name']).removeprefix('v')
 						if version.parse(latest_version) == version.parse(AppInfo.VERSION_PEP440):
 							print(__("You are using the latest version of FlashGBX."))
 						elif version.parse(latest_version) > version.parse(AppInfo.VERSION_PEP440):
