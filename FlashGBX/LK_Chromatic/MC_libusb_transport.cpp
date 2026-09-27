@@ -290,7 +290,7 @@ struct LibUSBDevice {
         const LibUSBContext& ctx,
         const uint16_t vendorID,
         const uint16_t productID) {
-        dprint("LibUSBDevice::LibUSBDevice({:#06x}, {:#06x})", vendorID, productID);
+        dprint("LibUSBDevice::open({:#06x}, {:#06x})", vendorID, productID);
 
         if (!ctx) [[unlikely]] {
             LogError("Can't initialize LibUSBDevice without a LibUSBContext");
@@ -386,20 +386,19 @@ struct LibUSBDevice {
     }
 
     ~LibUSBDevice() {
+        if (_moved) {
+            // Avoid misleading log spam
+            return;
+        }
+
         dprint("LibUSBDevice::~LibUSBDevice()");
         if (_interface) {
-            dprint("Releasing interface");
             libusb_release_interface(_device, *_interface);
         }
 
         if (_device) {
-            dprint("Releasing device");
             libusb_close(_device);
         }
-
-        dprint("Not releasing context, not owned by connection");
-
-        dprint("Released");
     }
 
     [[nodiscard]]
@@ -419,6 +418,7 @@ private:
     std::optional<uint8_t> _interface {};
     uint8_t _epIn {};
     uint8_t _epOut {};
+    bool _moved {};
 
     LibUSBDevice(
         libusb_context* context,
@@ -443,6 +443,8 @@ private:
         _interface = std::exchange(other._interface, std::nullopt);
         _epIn = std::exchange(other._epIn, 0);
         _epOut = std::exchange(other._epOut, 0);
+
+        _moved = std::exchange(other._moved, true);
     }
 };
 
