@@ -271,6 +271,8 @@ class GbxDevice(LK_Device):
     def _query_firmware_version(self) -> bool:
         if self.DEVICE is None:
             return False
+        if not self.DEVICE.is_open():
+            return False # e.g. no such interface
         try:
             self.DEVICE.reset_input_buffer()
             self.DEVICE.reset_output_buffer()
