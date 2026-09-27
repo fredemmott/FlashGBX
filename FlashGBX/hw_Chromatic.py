@@ -155,8 +155,15 @@ class GbxDevice(LK_Device):
             case 0: # Success
                 pass
             case 1: # DeviceNotFound
-                dprint(f"No {self.DEVICE_NAME} found")
-                return None
+                dprint(f"No {self.DEVICE_NAME} found via libusb, checking serial")
+                serial_ports = serial.tools.list_ports.comports()
+                have_serial = any(p.vid == self.USB_VENDOR_ID and p.pid == self.USB_PRODUCT_ID for p in serial_ports)
+                if not have_serial:
+                    dprint(f"No matching USB serial device found - looked for VID {self.USB_VENDOR_ID:04x} and PID {self.USB_PRODUCT_ID:04x}")
+                    return None
+                # No device is visible to libusb, but we have *something*; incompatible firmware, treating as InterfaceNotFound is accurate
+                dprint("Found matching USB serial device, assuming incompatible firmware")
+                pass
             case 2: # InterfaceNotFound
                 # Incorrect firmware version, handled in LoadFirmwareVersion
                 pass
