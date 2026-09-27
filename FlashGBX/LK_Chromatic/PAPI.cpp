@@ -316,12 +316,15 @@ extern "C" LK_CHROMATIC_EXPORT int papi_open(
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
     worker().reset();
-    static constexpr uint8_t ByeCommand[] = {
-        static_cast<uint8_t>(Command::Bye),
-        0,
-    };
-    std::ignore = mc_transport_enqueue_tx(ByeCommand, std::size(ByeCommand));
-    mc_transport_flush();
+
+    if (mc_transport_is_open()) {
+        static constexpr uint8_t ByeCommand[] = {
+            static_cast<uint8_t>(Command::Bye),
+            0,
+        };
+        std::ignore = mc_transport_enqueue_tx(ByeCommand, std::size(ByeCommand));
+        mc_transport_flush();
+    }
 
     mc_usb_close();
 }
