@@ -148,23 +148,15 @@ class GbxDevice(LK_Device):
     def _try_connect(self, port) -> MicrocodeDevice | None:
         if port is not None and port != self.PORT:
             return None
+
         dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
         res = dev.open()
-        # See papi_open() in PAPI.hpp
         match res:
-            case 0: # Success
+            case MicrocodeDevice.STATUS_SUCCESS: # Success
                 pass
-            case 1: # DeviceNotFound
-                dprint(f"No {self.DEVICE_NAME} found via libusb, checking serial")
-                serial_ports = serial.tools.list_ports.comports()
-                have_serial = any(p.vid == self.USB_VENDOR_ID and p.pid == self.USB_PRODUCT_ID for p in serial_ports)
-                if not have_serial:
-                    dprint(f"No matching USB serial device found - looked for VID {self.USB_VENDOR_ID:04x} and PID {self.USB_PRODUCT_ID:04x}")
-                    return None
-                # No device is visible to libusb, but we have *something*; incompatible firmware, treating as InterfaceNotFound is accurate
-                dprint("Found matching USB serial device, assuming incompatible firmware")
-                pass
-            case 2: # InterfaceNotFound
+            case MicrocodeDevice.ERROR_DEVICE_NOT_FOUND:
+                return None
+            case MicrocodeDevice.ERROR_INTERFACE_NOT_FOUND:
                 # Incorrect firmware version, handled in LoadFirmwareVersion
                 pass
             case _:

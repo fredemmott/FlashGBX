@@ -1,6 +1,15 @@
 import ctypes
 
+import serial
+
+from FlashGBX.Logging import dprint
+
+
 class Device:
+    STATUS_SUCCESS = 0
+    ERROR_DEVICE_NOT_FOUND = 1
+    ERROR_INTERFACE_NOT_FOUND = 2
+
     def __init__(self, papi, vendor_id: int, product_id: int):
         self._papi = papi
         self._vendorID = vendor_id
@@ -14,7 +23,18 @@ class Device:
         self._papi = papi
 
     def open(self) -> int:
-        return self._papi.papi_open(self._vendorID, self._productID)
+        # See papi_open() in PAPI.hpp for return codes
+        serial_ports = serial.tools.list_ports.comports()
+        have_serial = any(p.vid == self._vendorID and p.pid == self._productID for p in serial_ports)
+        if not have_serial:
+            dprint(
+                f"No matching USB serial device found - looked for VID {self._vendorID:04x} and PID {self._productID:04x}")
+            return self.ERROR_DEVICE_NOT_FOUND
+        res = self._papi.papi_open(self._vendorID, self._productID)
+        if res == self.ERROR_DEVICE_NOT_FOUND:
+            dprint("Found matching USB serial device but no libusb device, assuming incompatible firmware")
+            return self.ERROR_INTERFACE_NOT_FOUND
+        return res
 
     def close(self):
         self._papi.papi_close()
