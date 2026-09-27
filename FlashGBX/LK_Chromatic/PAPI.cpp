@@ -10,8 +10,10 @@ extern "C" {
 
 #include <algorithm>
 #include <bit>
+#include <condition_variable>
 #include <format>
 #include <functional>
+#include <mutex>
 #include <thread>
 #include <stop_token>
 
@@ -49,18 +51,22 @@ struct ContiguousSPSCStream {
         std::invoke(std::forward<Fn>(f), span.data(), count);
         _writePos.store(offset + count, std::memory_order_release);
         _writePos.notify_one();
-        _eventSeq.fetch_add(1, std::memory_order_release);
-        _eventSeq.notify_one();
+        _cv.notify_one();
         SPAMMY(TraceLoggingWriteStop(tla, "Stream::write()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
     }
 
     void read(uint8_t* const dest, const std::size_t count) {
         // can't be cancelled if we don't have a stop_token
-        std::ignore = read(dest, count, {});
+        std::ignore = read(dest, count, std::chrono::steady_clock::duration::max(), {});
     }
 
     [[nodiscard]]
-    bool read(uint8_t* const dest, const std::size_t count, const std::stop_token& cancel) {
+    bool read(uint8_t* const dest, const std::size_t count, const std::chrono::steady_clock::duration timeout, const std::stop_token& cancel) {
+        using duration = std::chrono::steady_clock::duration;
+        const auto timeout_at =
+            ((duration::max() - timeout) > duration::zero())
+                ? std::chrono::steady_clock::now() + timeout
+                : std::chrono::steady_clock::time_point::max();
         SPAMMY(TraceLoggingThreadActivity<gTL> tla);
         SPAMMY(TraceLoggingWriteStart(tla, "Stream::read()", TraceLoggingValue(count, "count"), TraceLoggingValue(_label, "label")));
 
@@ -91,17 +97,20 @@ struct ContiguousSPSCStream {
                 // - extremely slow operations like chip erase
                 // - user input
                 if ((++spinCount & _timeoutCheckMask) == 0) {
-                    const auto now = std::chrono::steady_clock::now();
-                    if (now - spinSince >= std::chrono::milliseconds(10)) {
-                        if (!this->wait_until_have_at_least_n_bytes(count, cancel)) {
-                            return false;
-                        }
-                        break;
-                    }
+                  const auto now = std::chrono::steady_clock::now();
                     if (now - lastTimeoutCheckAt < std::chrono::microseconds(100)) {
                         _timeoutCheckMask = (_timeoutCheckMask << 1) | 1;
                     }
-                    lastTimeoutCheckAt = now;
+
+                    if (now - spinSince < std::chrono::milliseconds(10)) {
+                        lastTimeoutCheckAt = now;
+                        continue;
+                    }
+
+                    if (!this->wait_until_readable(count, cancel, timeout_at)) {
+                        return false;
+                    }
+                    break;
                 }
 
 #ifdef _WIN32
@@ -140,33 +149,19 @@ struct ContiguousSPSCStream {
     }
 
     [[nodiscard]]
-    bool wait_until_have_at_least_n_bytes(const std::size_t count, const std::stop_token& token) {
+    bool wait_until_readable(
+        const std::size_t count,
+        const std::stop_token& stop,
+        const std::chrono::steady_clock::time_point timeout_at) {
         const auto readPos = _readPos.load(std::memory_order_relaxed);
-
-        auto seq = _eventSeq.load(std::memory_order_acquire);
-        auto writePos = _writePos.load(std::memory_order_acquire);
-        if (writePos - readPos >= count) {
+        if (_writePos.load(std::memory_order_acquire) - readPos >= count) {
             return true;
         }
 
-        const std::stop_callback callback {
-            token,
-            [this] {
-                _eventSeq.fetch_add(1, std::memory_order_release);
-                _eventSeq.notify_one();
-            }
-        };
-
-        while (writePos - readPos < count) {
-            if (token.stop_requested()) {
-                return false;
-            }
-            _eventSeq.wait(seq);
-            seq = _eventSeq.load(std::memory_order_relaxed);
-            writePos = _writePos.load(std::memory_order_acquire);
-        }
-
-        return true;
+        std::unique_lock lock { _cvMutex };
+        return _cv.wait_until(lock, stop, timeout_at, [this, readPos, count] {
+            return _writePos.load(std::memory_order_acquire) - readPos >= count;
+        });
     }
 
 private:
@@ -179,7 +174,8 @@ private:
     std::atomic<std::size_t> _readPos {};
     std::atomic<std::size_t> _writePos {};
 
-    std::atomic<std::size_t> _eventSeq {};
+    std::mutex _cvMutex;
+    std::condition_variable_any _cv;
 
     const char* const _label;
 
@@ -205,18 +201,29 @@ private:
 
     static void thread_main(const std::stop_token& stop) {
         SET_THREAD_NAME("LK -> Microcode worker");
+        dprint("start worker");
 
         while (!stop.stop_requested()) {
             uint8_t cmd {};
-            if (!streams().papi_to_lk.read(&cmd, 1, stop)) {
-                UNSET_THREAD_NAME();
-                return;
+            if (!streams().papi_to_lk.read(&cmd, 1, std::chrono::milliseconds(200), stop)) {
+                if (stop.stop_requested()) {
+                    break;
+                }
+                static constexpr uint8_t KeepAlive[] = {
+                    static_cast<uint8_t>(Command::NOP),
+                    0,
+                };
+                static_assert(std::size(KeepAlive) == BytesPerCommand);
+                std::ignore = mc_transport_enqueue_tx(KeepAlive, BytesPerCommand);
+                continue;
             }
             SPAMMY(TraceLoggingThreadActivity<gTL> tla);
             SPAMMY(TraceLoggingWriteStart(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
             mc_exec(cmd);
             SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
         }
+        dprint("Stopping worker");
+        UNSET_THREAD_NAME();
     }
 };
 auto& worker() {
@@ -278,11 +285,13 @@ extern "C" LK_CHROMATIC_EXPORT int papi_open(
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_close() {
+    worker().reset();
+    mc_transport_flush();
     mc_usb_close();
 }
 
 extern "C" LK_CHROMATIC_EXPORT int papi_is_open() {
-    return mc_usb_is_open() ? 1 : 0;
+    return mc_transport_is_open() ? 1 : 0;
 }
 
 extern "C" LK_CHROMATIC_EXPORT void papi_set_on_error_callback(PAPIStringCallback cb) {
@@ -324,6 +333,10 @@ extern "C" void papi_send_to_lk_reset_output_buffer() {
     worker().reset();
 
     streams().papi_to_lk.clear_write_buffer();
+
+    if (mc_transport_is_open()) {
+        worker().emplace();
+    }
 }
 
 extern "C" void papi_send_to_lk_flush() {
@@ -340,6 +353,10 @@ extern "C" void papi_recv_from_lk_reset_input_buffer() {
     worker().reset();
 
     streams().lk_to_papi.clear_read_buffer();
+
+    if (mc_transport_is_open()) {
+        worker().emplace();
+    }
 }
 
 ///// implement LK host IO functions using the PAPI buffers //////
