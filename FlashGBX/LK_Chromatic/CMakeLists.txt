@@ -85,8 +85,14 @@ if (WIN32)
 endif()
 
 if (MSVC)
-    # Enable conformant mode for the C preprocessor
-    target_compile_options(_LK_Chromatic PRIVATE "/Zc:preprocessor")
+    target_compile_options(
+      _LK_Chromatic
+      PRIVATE
+      # Enable conformant mode for the C preprocessor
+      "/Zc:preprocessor"
+      # Warnings as errors
+      "/WX"
+    )
     install(FILES "$<TARGET_PDB_FILE:_LK_Chromatic>" DESTINATION FlashGBX)
 endif()
 
