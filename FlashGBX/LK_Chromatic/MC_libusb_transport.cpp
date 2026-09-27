@@ -293,12 +293,6 @@ struct LibUSBDevice {
             LogError("Can't initialize LibUSBDevice without a LibUSBContext");
             abort();
         }
-        libusb_device** devices {nullptr};
-        const auto deviceCount = libusb_get_device_list(ctx, &devices);
-        if (deviceCount < 0) {
-            LogError("libusb_get_device_list() failed: {} ('{}')", deviceCount, libusb_error_name(static_cast<libusb_error>(deviceCount)));
-            return std::unexpected { static_cast<int>(deviceCount) };
-        }
 
         const auto device = libusb_open_device_with_vid_pid(ctx, vendorID, productID);
         if (!device) {
@@ -315,6 +309,10 @@ struct LibUSBDevice {
             libusb_get_active_config_descriptor(libusb_get_device(device), &config);
 
             for (auto i = 0; i < config->bNumInterfaces; ++i) {
+                if (config->interface[i].num_altsetting == 0) {
+                    dprint("Skipping interface idx {}, no altsettings", i);
+                    continue;
+                }
                 const auto& interface = config->interface[i].altsetting[0];
                 interfaceNumber = interface.bInterfaceNumber;
 
@@ -329,7 +327,7 @@ struct LibUSBDevice {
                     continue;
                 }
                 unsigned char buffer[255];
-                const auto count = libusb_get_string_descriptor_ascii(device, desc, buffer, sizeof(buffer));
+                const auto count = libusb_get_string_descriptor_ascii(device, desc, buffer, std::size(buffer));
                 if (count < 0) {
                     dprint("Skipping interface {}, failed to get string ({})", interfaceNumber, count);
                     continue;
@@ -424,7 +422,9 @@ private:
         libusb_device_handle* device,
         std::optional<uint8_t> interface,
         const uint8_t epIn,
-        const uint8_t epOut) noexcept : _context(context), _device { device }, _interface(std::move(interface)), _epIn { epIn }, _epOut { epOut } {}
+        const uint8_t epOut) noexcept : _context(context), _device { device }, _interface(interface), _epIn { epIn }, _epOut { epOut } {
+        dprint("LibUSBDevice::LibUSBDevice()");
+    }
 
     [[nodiscard]]
     LibUSBTransfer transfer(const uint8_t endpoint, void* data, const std::size_t count, const unsigned int timeoutMS) const {
@@ -520,7 +520,7 @@ int mc_usb_open(
     return static_cast<int>(papi_open_status::Success);
 }
 
-bool mc_usb_is_open() {
+bool mc_transport_is_open() {
     return device().has_value();
 }
 

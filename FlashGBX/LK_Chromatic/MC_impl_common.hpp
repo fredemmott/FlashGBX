@@ -65,8 +65,6 @@ void LogError(std::format_string<Args...> fmt, Args&&... args) {
 // matches papi_open()
 [[nodiscard]]
 int mc_usb_open(uint16_t vendorID, uint16_t productID);
-[[nodiscard]]
-bool mc_usb_is_open();
 void mc_usb_close();
 
 #endif
