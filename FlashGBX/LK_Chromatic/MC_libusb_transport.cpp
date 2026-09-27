@@ -486,7 +486,8 @@ std::size_t enqueue(
                 "Failed to submit transfer: {} ('{}') - device unplugged?",
                 static_cast<int>(ret.error()),
                 libusb_error_name(ret.error()));
-            ops.clear();
+            ops.pop_back();
+            mc_transport_flush();
             return 0;
         }
     }
@@ -511,11 +512,12 @@ extern "C" [[nodiscard]] size_t mc_transport_enqueue_rx(uint8_t* const data, con
 extern "C" void mc_transport_flush() {
     if (!transfers().tx.empty()) {
         std::ignore = transfers().tx.back().wait();
+        transfers().tx.clear();
     }
     if (!transfers().rx.empty()) {
         std::ignore = transfers().rx.back().wait();
+        transfers().rx.clear();
     }
-    transfers() = {};
 }
 
 int mc_usb_open(
