@@ -121,8 +121,9 @@ void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 void LK2MC_cart_power(bool);
 #define CART_POWER_ON()						LK2MC_cart_power(true)
 #define CART_POWER_OFF()					LK2MC_cart_power(false)
-#define ACTIVITY_LED_ON()					{}
-#define ACTIVITY_LED_OFF()					{}
+void LK2MC_activity_led(bool);
+#define ACTIVITY_LED_ON()					LK2MC_activity_led(true)
+#define ACTIVITY_LED_OFF()					LK2MC_activity_led(false)
 #define SET_VOLTAGE_3_3V()					{}
 #define SET_VOLTAGE_5V()					{}
 #define AUTO_POWEROFF_RESUME()				{}

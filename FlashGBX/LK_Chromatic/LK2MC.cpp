@@ -25,6 +25,7 @@ enum class StateBits : uint8_t {
     CartPresent = 1 << 0,
     CartPowered = 1 << 1,
     CartReady = 1 << 2,
+    ActivityLED = 1 << 3,
 };
 
 template<StateBits T>
@@ -696,4 +697,14 @@ extern "C" void LK2MC_cart_power(const bool on) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+}
+
+extern "C" void LK2MC_activity_led(const bool on) {
+    static constexpr uint8_t Value = std::to_underlying(StateBits::ActivityLED) & 0xFF;
+    static constexpr uint8_t Select = Value << 4;
+    const uint8_t command[] = {
+        static_cast<uint8_t>(Command::SetStateBits),
+        static_cast<uint8_t>(Select | (on ? Value : 0)),
+    };
+    std::ignore = mc_transport_enqueue_tx(command, std::size(command));
 }
