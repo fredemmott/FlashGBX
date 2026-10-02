@@ -24,6 +24,8 @@ enum class Command : uint8_t {
   GetStateBits = 15,
 
   GetFWInfo = 16,
-  Bye = 17
+  Bye = 17,
+
+  SetStateBits = 18,
 };
 

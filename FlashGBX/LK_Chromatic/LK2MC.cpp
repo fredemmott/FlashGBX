@@ -615,11 +615,10 @@ extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
 }
 
 extern "C" void mc_init() {
-    const mc_transport_callbacks callbacks {
+    static constexpr mc_transport_callbacks Callbacks {
         .on_tx_progress = &tx_progress_callback,
     };
-    mc_transport_set_callbacks(&callbacks);
-
+    mc_transport_set_callbacks(&Callbacks);
     output_enable_state() = {};
 }
 
