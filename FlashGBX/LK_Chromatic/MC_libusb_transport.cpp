@@ -297,7 +297,24 @@ struct LibUSBDevice {
             abort();
         }
 
-        const auto device = libusb_open_device_with_vid_pid(ctx, vendorID, productID);
+        struct device_guard_t {
+            libusb_device_handle* p { nullptr };
+            [[nodiscard]]
+            auto detach() {
+                return std::exchange(p, nullptr);
+            }
+
+            ~device_guard_t() {
+                if (p) {
+                    libusb_close(p);
+                }
+            }
+
+            operator libusb_device_handle*() const noexcept {
+                return p;
+            }
+        } device { libusb_open_device_with_vid_pid(ctx, vendorID, productID) };
+
         if (!device) {
             LogError("libusb_open_device_with_vid_pid() did not return a device");
             return std::unexpected { static_cast<int>(papi_open_status::DeviceNotFound) };
@@ -382,7 +399,7 @@ struct LibUSBDevice {
 
         dprint("Opened libusb device {:#06x}/{:#06x} interface {:#04x}: epIn: {:#04x}, epOut: {:#04x}", vendorID, productID, interfaceNumber,epIn, epOut);
 
-        return LibUSBDevice { ctx, device, interface, epIn, epOut };
+        return LibUSBDevice { ctx, device.detach(), interface, epIn, epOut };
     }
 
     ~LibUSBDevice() {
