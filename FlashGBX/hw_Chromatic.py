@@ -42,6 +42,13 @@ class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
     REQUIRED_FW_VERSION = "2026.09.27.0"
 
+    PCB_VERSIONS = {
+        0: "0b00",
+        1: "0b01",
+        2: "0b10",
+        3: "0b11",
+    }
+
     DEVICE : MicrocodeDevice | None = None
 
     USB_VENDOR_ID = 0x374e
@@ -323,8 +330,8 @@ class GbxDevice(LK_Device):
                 dprint(f"Expected {len(cartio_firmware_id)} bytes, got {size}")
                 return False
 
-            if size < 8:
-                dprint(f"Expected at least 8 bytes, got {size}")
+            if size < 9:
+                dprint(f"Expected at least 9 bytes, got {size}")
 
             # BCD
             year = consume(2).hex()
@@ -336,8 +343,11 @@ class GbxDevice(LK_Device):
             upstream_major = consume(1)[0]
             upstream_minor = consume(1)[0]
 
+            pcb_ver = consume(1)[0] & 0b11
+
             self.FW["device_name"] = self.DEVICE_NAME
             self.FW["pcb_name"] = self.DEVICE_NAME
+            self.FW["pcb_ver"] = pcb_ver
             self.FW["fw_dt"] = f"{year}-{month}-{day}"
             self.FW["hw_Chromatic/fw_ver/CartIO"] = f"{year}.{month}.{day}.{revision}"
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
@@ -444,7 +454,9 @@ class GbxDevice(LK_Device):
         info = data[:8]
         keys = ["cfw_id", "fw_ver", "pcb_ver", "fw_ts"]
         values = struct.unpack(">cHBI", bytearray(info))
-        self.FW.update(zip(keys, values))
+        # Preserve pcb_ver from the non-LK firmware information
+        self.FW.update({k: v for k, v in zip(keys, values) if k != "pcb_ver"})
+
         self.FW["cfw_id"] = self.FW["cfw_id"].decode('ascii')
         self.FW["fw_dt"] = datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(
             microsecond=0).isoformat()
@@ -475,7 +487,7 @@ class GbxDevice(LK_Device):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        return f"L{self.FW['fw_ver']} / MC v{self.FW["hw_Chromatic/fw_ver/CartIO"]} / ModRetro v{self.FW['hw_Chromatic/fw_ver/Upstream']}"
+        return f"L{self.FW['fw_ver']} / MC v{self.FW["hw_Chromatic/fw_ver/CartIO"]} / ModRetro v{self.FW['hw_Chromatic/fw_ver/Upstream']} / PCB {self.GetPCBVersion()}"
 
     def GetFullNameExtended(self, more=False):
         return f"{self.GetFullName()} - {self.GetFirmwareVersion()}"
