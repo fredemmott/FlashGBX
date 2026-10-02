@@ -23,7 +23,15 @@ namespace {
 
 enum class StateBits : uint8_t {
     CartPresent = 1 << 0,
+    CartPowered = 1 << 1,
+    CartReady = 1 << 2,
 };
+
+template<StateBits T>
+[[nodiscard]]
+bool HasBit(const StateBits v) {
+    return (std::to_underlying(v) & std::to_underlying(T)) == std::to_underlying(T);
+}
 
 enum class SetPinsA : uint8_t {
     CLK = 1 << 0,
@@ -634,4 +642,38 @@ extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t coun
 extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t count) {
     LK_ASYNC_FLUSH(nullptr, 0);
     lk_send_to_host(data, count);
+}
+
+extern "C" void LK2MC_cart_power(const bool on) {
+    static constexpr uint8_t Value = std::to_underlying(StateBits::CartPowered) & 0xFF;
+    static constexpr uint8_t Select = Value << 4;
+    const uint8_t command[] = {
+        static_cast<uint8_t>(Command::SetStateBits),
+        static_cast<uint8_t>(Select | (on ? Value : 0)),
+    };
+    std::ignore = mc_transport_enqueue_tx(command, std::size(command));
+    if (!on) {
+        return;
+    }
+
+    while (true) {
+        static constexpr uint8_t GetStateBits[] = {
+            static_cast<uint8_t>(Command::GetStateBits),
+            0,
+            static_cast<uint8_t>(Command::Flush),
+            0,
+        };
+        uint8_t state {};
+        std::ignore = mc_transport_enqueue_tx(GetStateBits, std::size(GetStateBits));
+        std::ignore = mc_transport_enqueue_rx(&state, 1);
+        mc_transport_flush();
+        if (!HasBit<StateBits::CartPresent>(static_cast<StateBits>(state))) {
+            dprint("no cart - {}", state);
+            return;
+        }
+        if (HasBit<StateBits::CartReady>(static_cast<StateBits>(state))) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 }
