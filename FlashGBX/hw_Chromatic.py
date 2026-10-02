@@ -92,6 +92,9 @@ class GbxDevice(LK_Device):
         self._papi.papi_get_fw_info.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
         self._papi.papi_get_fw_info.restype = ctypes.c_uint16
 
+        self._papi.papi_get_state_bits.argtypes = []
+        self._papi.papi_get_state_bits.restype = ctypes.c_uint8
+
         self._papi.papi_close.argtypes = []
         self._papi.papi_close.restype = None
 
@@ -183,6 +186,30 @@ class GbxDevice(LK_Device):
 
         return dev
 
+    def _wait_for_cartridge(self):
+        BIT_CART_PRESENT = 1 << 0
+        BIT_CART_POWERED = 1 << 1
+        BIT_CART_READY = 1 << 2
+        retries = 0
+        initial_bits = None
+        start = time.time()
+        while True:
+            bits = self._papi.papi_get_state_bits()
+            if retries == 0:
+                initial_bits = bits
+
+            if (bits & BIT_CART_PRESENT) != BIT_CART_PRESENT:
+                break
+
+            assert ((bits & BIT_CART_POWERED) == BIT_CART_POWERED)
+            if (bits & BIT_CART_READY) == BIT_CART_READY:
+                break
+            retries += 1
+            time.sleep(0.01) # 10ms
+
+        if retries >= 1:
+            print(f"Cartridge ready: 0b{bin(initial_bits)[2:].zfill(8)} => 0b{bin(bits)[2:].zfill(8)} after {time.time() - start:.2f} seconds")
+
 
     def TryConnect(self, port, baudrate):
         dev = self._try_connect(port)
@@ -232,6 +259,8 @@ class GbxDevice(LK_Device):
             return False
 
         self.DEVICE.timeout = self.DEVICE_TIMEOUT
+
+        self._wait_for_cartridge()
 
         conn_msg.append([0, "No help is currently available when using a ModRetro Chromatic device"])
 

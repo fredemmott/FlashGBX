@@ -447,3 +447,17 @@ extern "C" uint16_t papi_get_fw_info(uint8_t* const buffer, const uint16_t count
     mc_transport_flush();
     return size;
 }
+
+extern "C" uint8_t papi_get_state_bits() {
+    static constexpr uint8_t Commands[] = {
+        static_cast<uint8_t>(Command::GetStateBits),
+        0,
+        static_cast<uint8_t>(Command::Flush),
+        0,
+    };
+    std::ignore = mc_transport_enqueue_tx(Commands, std::size(Commands));
+    uint8_t buffer {};
+    std::ignore = mc_transport_enqueue_rx(&buffer, 1);
+    mc_transport_flush();
+    return buffer;
+}
