@@ -1,0 +1,14 @@
+/FlashGBX_Launcher.c
+/FlashGBX_Launcher.ico
+/FlashGBX_Launcher.manifest
+/FlashGBX_Launcher.obj
+/FlashGBX_Launcher.rc
+/FlashGBX_Launcher.res
+/Makefile
+/Makefile.nmake
+/setup.iss
+/artifacts/
+/output/
+/cache/
+/setup/
+/.idea/
