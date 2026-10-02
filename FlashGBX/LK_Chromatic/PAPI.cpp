@@ -229,6 +229,7 @@ private:
                     LogError("Failed to enqueue keep-alive NOP, shutting down worker. Device unplugged?");
                     break;
                 }
+                mc_maybe_auto_power_off();
                 continue;
             }
             SPAMMY(TraceLoggingThreadActivity<gTL> tla);

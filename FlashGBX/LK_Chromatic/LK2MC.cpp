@@ -320,6 +320,16 @@ output_enable_state_t& output_enable_state() {
     return state;
 }
 
+auto& epoch() {
+    static std::chrono::steady_clock::time_point ret {};
+    return ret;
+}
+
+void update_lk_runtime() {
+    using namespace std::chrono;
+    lk_runtime = duration_cast<milliseconds>(steady_clock::now() - epoch()).count();
+}
+
 } // namespace
 
 extern "C" uint8_t LK2MC_ping(const uint8_t cookie) {
@@ -460,8 +470,7 @@ extern "C" uint32_t LK2MC_TIMESTAMP_NOW() {
         std::ratio_less_equal<clock::period, std::milli>::value,
         "Clock granularity is insufficent");
 
-    static const auto epoch = clock::now();
-    return duration_cast<milliseconds>(clock::now() - epoch).count();
+    return duration_cast<milliseconds>(clock::now() - epoch()).count();
 }
 
 extern "C" uint8_t LK2MC_DMG_DATA_GET() {
@@ -614,8 +623,16 @@ extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
 extern "C" void mc_exec(const uint8_t command) {
     auto& cq = CommandQueue::get();
     cq.start_batch();
+    update_lk_runtime();
     lk_loop(command);
     cq.end_batch();
+
+    mc_maybe_auto_power_off();
+}
+
+extern "C" void mc_maybe_auto_power_off() {
+    update_lk_runtime();
+    lk_cart_power_off_proc();
 }
 
 extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
@@ -628,10 +645,13 @@ extern "C" void mc_init() {
     };
     mc_transport_set_callbacks(&Callbacks);
     output_enable_state() = {};
+
+    epoch() = std::chrono::steady_clock::now();
 }
 
 extern "C" void mc_reset() {
     mc_transport_set_callbacks(nullptr);
+    epoch() = {};
 }
 
 extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {

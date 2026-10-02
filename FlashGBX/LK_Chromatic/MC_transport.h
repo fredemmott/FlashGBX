@@ -50,6 +50,11 @@ void mc_on_debug_message(const char* message, size_t length);
 /* Pass first byte to this; additional bytes will be fetched by a call to
  * `lk_recv_from_host()` */
 void mc_exec(uint8_t command);
+/* Call periodically, e.g. if a read times out.
+ *
+ * Automatically called by `mc_exec()`
+ */
+void mc_maybe_auto_power_off();
 
 /* call from your `open()`-like function once opened */
 void mc_init();
