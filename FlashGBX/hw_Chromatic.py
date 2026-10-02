@@ -489,19 +489,10 @@ class GbxDevice(LK_Device):
         pass
 
     def SupportsBootloaderReset(self):
-        return self.FW["bootloader_reset"]
+        return False
 
     def BootloaderReset(self):
-        if not self.SupportsBootloaderReset(): return False
-        dprint("Resetting to bootloader...")
-        try:
-            self._write(self.DEVICE_CMD["BOOTLOADER_RESET"], wait=True)
-            self._write(1)
-            self.Close()
-            return True
-        except Exception as e:
-            print("Disconnecting...", e)
-            return False
+        raise NotImplementedError
 
     def SupportsAudioAsWe(self):
         return True
