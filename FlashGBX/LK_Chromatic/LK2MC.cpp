@@ -28,6 +28,12 @@ enum class StateBits : uint8_t {
     ActivityLED = 1 << 3,
 };
 
+[[nodiscard]]
+auto& auto_poweroff_suspended() {
+    static bool ret { false };
+    return ret;
+}
+
 template<StateBits T>
 [[nodiscard]]
 bool HasBit(const StateBits v) {
@@ -632,6 +638,9 @@ extern "C" void mc_exec(const uint8_t command) {
 }
 
 extern "C" void mc_maybe_auto_power_off() {
+    if (auto_poweroff_suspended()) {
+        return;
+    }
     update_lk_runtime();
     lk_cart_power_off_proc();
 }
@@ -702,9 +711,11 @@ extern "C" void LK2MC_cart_power(const bool on) {
 extern "C" void LK2MC_activity_led(const bool on) {
     static constexpr uint8_t Value = std::to_underlying(StateBits::ActivityLED) & 0xFF;
     static constexpr uint8_t Select = Value << 4;
-    const uint8_t command[] = {
-        static_cast<uint8_t>(Command::SetStateBits),
-        static_cast<uint8_t>(Select | (on ? Value : 0)),
-    };
-    std::ignore = mc_transport_enqueue_tx(command, std::size(command));
+
+    const auto arg = Select | (on ? Value : 0);
+    CommandQueue::get().push(Command::SetStateBits, arg);
+}
+
+extern "C" void LK2MC_auto_poweroff_suspend(const bool suspend) {
+    auto_poweroff_suspended() = suspend;
 }
