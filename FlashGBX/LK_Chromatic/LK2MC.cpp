@@ -642,7 +642,10 @@ extern "C" void mc_maybe_auto_power_off() {
         return;
     }
     update_lk_runtime();
+    auto& cq = CommandQueue::get();
+    cq.start_batch();
     lk_cart_power_off_proc();
+    cq.end_batch();
 }
 
 extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
@@ -677,11 +680,12 @@ extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t 
 extern "C" void LK2MC_cart_power(const bool on) {
     static constexpr uint8_t Value = std::to_underlying(StateBits::CartPowered) & 0xFF;
     static constexpr uint8_t Select = Value << 4;
-    const uint8_t command[] = {
-        static_cast<uint8_t>(Command::SetStateBits),
-        static_cast<uint8_t>(Select | (on ? Value : 0)),
-    };
-    std::ignore = mc_transport_enqueue_tx(command, std::size(command));
+
+    auto& cq = CommandQueue::get();
+
+    const auto arg = static_cast<uint8_t>(Select | (on ? Value : 0));
+    cq.push(Command::SetStateBits, arg);
+
     if (!on) {
         return;
     }
@@ -693,10 +697,10 @@ extern "C" void LK2MC_cart_power(const bool on) {
             static_cast<uint8_t>(Command::Flush),
             0,
         };
+        cq.push(Command::GetStateBits);
         uint8_t state {};
-        std::ignore = mc_transport_enqueue_tx(GetStateBits, std::size(GetStateBits));
-        std::ignore = mc_transport_enqueue_rx(&state, 1);
-        mc_transport_flush();
+        LK2MC_flush(&state, 1);
+
         if (!HasBit<StateBits::CartPresent>(static_cast<StateBits>(state))) {
             dprint("no cart - {}", state);
             return;
