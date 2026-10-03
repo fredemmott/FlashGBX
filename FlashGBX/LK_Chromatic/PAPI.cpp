@@ -197,6 +197,7 @@ struct Worker {
         _thread = std::jthread { &Worker::thread_main };
     }
     ~Worker() {
+        _thread = {};
         mc_transport_flush();
     }
 
