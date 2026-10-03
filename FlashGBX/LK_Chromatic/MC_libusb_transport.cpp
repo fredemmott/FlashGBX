@@ -1,3 +1,4 @@
+#include <thread>
 extern "C" {
 #include "MC_transport.h"
 
@@ -347,7 +348,14 @@ struct LibUSBDevice {
                     continue;
                 }
                 unsigned char buffer[255];
-                const auto count = libusb_get_string_descriptor_ascii(device, desc, buffer, std::size(buffer));
+                int count = 0;
+                for (int j = 0; j < 10; ++j) {
+                    count = libusb_get_string_descriptor_ascii(device, desc, buffer, std::size(buffer));
+                    if (count >= 0) {
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
                 if (count < 0) {
                     dprint("Skipping interface {}, failed to get string ({})", interfaceNumber, count);
                     continue;
