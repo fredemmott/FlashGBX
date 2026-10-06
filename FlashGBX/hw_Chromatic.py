@@ -43,6 +43,12 @@ class GbxDevice(LK_Device):
     REQUIRED_FW_VERSION = "2026.09.27.0"
 
     PCB_VERSIONS = {
+        # { VERSION_DET2, VERSION_DET} where VERSION_DET is *high* on old versions, *low* on new versions
+        #
+        # This matches the raw `VERSION_DET` inputs on `top.v` on the FPGA; note that this is the *inverse* of the
+        # pcb_ver bit sent in FPGA -> MCU messages.
+        #
+        # The current only known revision is `0b11`, tested on a Mid-2025 refresh Chromatic
         0: "0b00",
         1: "0b01",
         2: "0b10",
