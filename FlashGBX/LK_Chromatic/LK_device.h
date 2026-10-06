@@ -126,9 +126,8 @@ void LK2MC_activity_led(bool);
 #define ACTIVITY_LED_OFF()					LK2MC_activity_led(false)
 #define SET_VOLTAGE_3_3V()					{}
 #define SET_VOLTAGE_5V()					{}
-void LK2MC_auto_poweroff_suspend(bool);
-#define AUTO_POWEROFF_RESUME()					LK2MC_auto_poweroff_suspend(false)
-#define AUTO_POWEROFF_SUSPEND()					LK2MC_auto_poweroff_suspend(true)
+#define AUTO_POWEROFF_RESUME()					{ auto_off_timer_suspended = false; }
+#define AUTO_POWEROFF_SUSPEND()					{ auto_off_timer_suspended = true; }
 
 uint32_t LK2MC_TIMESTAMP_NOW();
 #define TIMESTAMP_NOW()						LK2MC_TIMESTAMP_NOW()
