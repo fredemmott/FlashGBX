@@ -317,7 +317,7 @@ struct output_enable_state_t {
 };
 
 output_enable_state_t& output_enable_state() {
-    static output_enable_state_t state;
+    static output_enable_state_t state {};
     return state;
 }
 
@@ -531,7 +531,10 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     case PIN_WR: a(SetPinsA::WR); break;
     case PIN_RD: a(SetPinsA::RD); break;
     case PIN_CS: a(SetPinsA::CS); break;
-    case LK2MC_PIN_A15: b(SetPinsB::A15); break;
+    case LK2MC_PIN_A15:
+        b(SetPinsB::A15);
+        output_enable_state().address = true;
+        break;
     case PIN_CS2: b(SetPinsB::RST); break; // CS2 is AGB name for RST pin
     case PIN_AUDIO: b(SetPinsB::AUDIO); break;
     default:
@@ -601,7 +604,7 @@ extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe
     }
 }
 
-extern "C" void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
+extern "C" void LK2MC_SET_ADDR_PIN(const uint8_t pin, const uint8_t high) {
     if (pin != 15) [[unlikely]] {
         LogError("SET_ADDR_PIN called with pin != 15 ({})", pin);
         return;
@@ -682,6 +685,8 @@ extern "C" void LK2MC_cart_power(const bool on) {
 
     const auto arg = static_cast<uint8_t>(Select | (on ? Value : 0));
     cq.push(Command::SetStateBits, arg);
+
+    output_enable_state() = {};
 
     if (!on) {
         return;
