@@ -635,6 +635,9 @@ extern "C" void mc_maybe_auto_power_off() {
     if (auto_off_timer_suspended) {
         return;
     }
+    if (!_lk_var8[LK_VAR8_AUTO_POWEROFF_ENABLED]) {
+        return;
+    }
     update_lk_runtime();
     auto& cq = CommandQueue::get();
     cq.start_batch();
