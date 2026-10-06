@@ -94,6 +94,7 @@ struct [[nodiscard]] LibUSBTransfer {
 
     ~LibUSBTransfer() {
         if (_transfer) {
+            std::ignore = wait();
             libusb_free_transfer(_transfer);
         }
     }
