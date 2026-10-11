@@ -40,7 +40,7 @@ except ImportError:
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
-    REQUIRED_FW_VERSION = "2026.09.27.0"
+    REQUIRED_PROTO_VERSION = 1
 
     PCB_VERSIONS = {
         # { VERSION_DET2, VERSION_DET} where VERSION_DET is *high* on old versions, *low* on new versions
@@ -309,8 +309,8 @@ class GbxDevice(LK_Device):
                 dprint(f"Expected {len(cartio_firmware_id)} bytes, got {size}")
                 return False
 
-            if size < 9:
-                dprint(f"Expected at least 9 bytes, got {size}")
+            if size < 11:
+                dprint(f"Expected at least 11 bytes, got {size}")
 
             # BCD
             year = consume(2).hex()
@@ -322,6 +322,13 @@ class GbxDevice(LK_Device):
             upstream_major = consume(1)[0]
             upstream_minor = consume(1)[0]
 
+            min_proto_version = consume(1)[0]
+            max_proto_version = consume(1)[0]
+
+            # --- ROM ENDS HERE ---
+
+            # This is appended to the ROM at runtime based on the FPGA VERSION_DET flags
+
             pcb_ver = consume(1)[0] & 0b11
 
             self.FW["device_name"] = self.DEVICE_NAME
@@ -331,9 +338,10 @@ class GbxDevice(LK_Device):
             self.FW["hw_Chromatic/fw_ver/CartIO"] = f"{year}.{month}.{day}.{revision}"
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
 
-            if self.FW["hw_Chromatic/fw_ver/CartIO"] != self.REQUIRED_FW_VERSION:
-                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version (need v{self.REQUIRED_FW_VERSION})")
+            if (min_proto_version > self.REQUIRED_PROTO_VERSION) or (max_proto_version < self.REQUIRED_PROTO_VERSION):
+                dprint(f"Required protocol version {self.REQUIRED_PROTO_VERSION} is not within firmware range [{min_proto_version}, {max_proto_version}]")
                 return False
+
             dprint("Firmware matches")
             return True
 
