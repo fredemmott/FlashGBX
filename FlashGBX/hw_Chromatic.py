@@ -58,9 +58,17 @@ class GbxDevice(LK_Device):
     DEVICE : MicrocodeDevice | None = None
 
     USB_VENDOR_ID = 0x374e
-    USB_PRODUCT_ID = 0x0101
-
-    PORT = f"libusb:{USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x}"
+    # Serial number is part of the product ID
+    USB_PRODUCT_IDS = [
+        0x0101,
+        0x0102,
+        0x0103,
+        0x0104,
+        0x0105,
+        0x0106,
+        0x0107,
+        0x0108,
+    ]
 
     # - Align with 512-byte USB packet sizes
     # - Fit in a uint16 as the LK protocol requires it
@@ -68,6 +76,15 @@ class GbxDevice(LK_Device):
     MAX_BUFFER_WRITE = MAX_BUFFER_READ
 
     _c_callbacks = []
+
+    def _make_port(self, product_id: int):
+        return f"libusb:{self.USB_VENDOR_ID:04x}:{product_id:04x}"
+    
+    def _parse_port(self, string: str) -> int | None:
+        for product_id in self.USB_PRODUCT_IDS:
+            if string == self._make_port(product_id):
+                return product_id
+        return None
 
     def __init__(self):
         super().__init__()
@@ -162,10 +179,18 @@ class GbxDevice(LK_Device):
         dprint(message)
 
     def _try_connect(self, port) -> MicrocodeDevice | None:
-        if port is not None and port != self.PORT:
+        if port is not None:
+            product_id = self._parse_port(port)
+            if product_id is None:
+                return port
+        else:
+            for product_id in self.USB_PRODUCT_IDS:
+                ret = self._try_connect(self._make_port(product_id))
+                if ret is not None:
+                    return ret
             return None
 
-        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
+        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, product_id)
         res = dev.open()
         match res:
             case MicrocodeDevice.STATUS_SUCCESS: # Success
@@ -186,6 +211,9 @@ class GbxDevice(LK_Device):
         if not match:
             dev.close()
             return None
+
+        self.PORT = self._make_port(product_id)
+        dprint(f"Connected on {self.PORT}")
 
         challenge = os.urandom(1)[0]
         expected = (~challenge) & 0xFF
