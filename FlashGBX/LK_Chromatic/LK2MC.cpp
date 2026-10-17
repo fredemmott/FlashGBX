@@ -321,6 +321,16 @@ output_enable_state_t& output_enable_state() {
     return state;
 }
 
+struct address_state_t {
+    uint16_t valid {};
+    uint16_t value {};
+};
+
+address_state_t& address_state() {
+    static address_state_t state {};
+    return state;
+}
+
 auto& epoch() {
     static std::chrono::steady_clock::time_point ret {};
     return ret;
@@ -533,6 +543,11 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     case PIN_CS: a(SetPinsA::CS); break;
     case LK2MC_PIN_A15:
         b(SetPinsB::A15);
+        address_state().value &= ~(1 << 15);
+        if (high) {
+            address_state().value |= static_cast<uint16_t>(1 << 15);
+        }
+        address_state().valid |= 1 << 15;
         output_enable_state().address = true;
         break;
     case PIN_CS2: b(SetPinsB::RST); break; // CS2 is AGB name for RST pin
@@ -614,10 +629,20 @@ extern "C" void LK2MC_SET_ADDR_PIN(const uint8_t pin, const uint8_t high) {
 
 extern "C" void LK2MC_DMG_ADDR_SET(const uint16_t address) {
     auto& cq = CommandQueue::get();
-    cq.append({
-        {Command::SetAddressMSB, static_cast<uint8_t>(address >> 8)},
-        {Command::SetAddressLSB, static_cast<uint8_t>(address & 0xff)},
-    });
+    const auto msbMatch = ((address_state().valid & 0xFF00) == 0xFF00)
+        && (address_state().value & 0xFF00) == (address & 0xFF00);
+    if (!msbMatch) {
+        cq.push(Command::SetAddressMSB, static_cast<uint8_t>(address >> 8));
+        address_state().valid |= 0xFF00;
+        address_state().value = (address & 0xFF00) | static_cast<uint16_t>(address_state().value & 0xFF);
+    }
+    const auto lsbMatch = ((address_state().valid & 0xFF) == 0xFF)
+        && (address_state().value & 0xFF) == (address & 0xFF);
+    if (!lsbMatch) {
+        cq.push(Command::SetAddressLSB, static_cast<uint8_t>(address & 0xFF));
+        address_state().valid |= 0xFF;
+        address_state().value = (address & 0xFF) | static_cast<uint16_t>(address_state().value & 0xFF00);
+    }
 }
 
 extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
@@ -658,6 +683,7 @@ extern "C" void mc_init() {
     };
     mc_transport_set_callbacks(&Callbacks);
     auto_off_timer_suspended = false;
+    address_state() = {};
 
     epoch() = std::chrono::steady_clock::now();
 }
@@ -687,6 +713,7 @@ extern "C" void LK2MC_cart_power(const bool on) {
     cq.push(Command::SetStateBits, arg);
 
     output_enable_state() = {};
+    address_state() = {};
 
     if (!on) {
         return;
