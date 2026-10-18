@@ -15,6 +15,7 @@ extern "C" {
 #include <future>
 #include <list>
 #include <ranges>
+#include <thread>
 #include <utility>
 
 #include <cstring>
@@ -703,7 +704,7 @@ extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t 
     lk_send_to_host(data, count);
 }
 
-extern "C" void LK2MC_cart_power(const bool on) {
+extern "C" void LK2MC_cart_power(const uint8_t on) {
     static constexpr uint8_t Value = std::to_underlying(StateBits::CartPowered) & 0xFF;
     static constexpr uint8_t Select = Value << 4;
 
@@ -741,7 +742,7 @@ extern "C" void LK2MC_cart_power(const bool on) {
     }
 }
 
-extern "C" void LK2MC_activity_led(const bool on) {
+extern "C" void LK2MC_activity_led(const uint8_t on) {
     static constexpr uint8_t Value = std::to_underlying(StateBits::ActivityLED) & 0xFF;
     static constexpr uint8_t Select = Value << 4;
 

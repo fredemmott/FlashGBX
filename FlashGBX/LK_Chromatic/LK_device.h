@@ -118,10 +118,10 @@ void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
 #define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)
 
-void LK2MC_cart_power(bool);
+void LK2MC_cart_power(uint8_t);
 #define CART_POWER_ON()						LK2MC_cart_power(true)
 #define CART_POWER_OFF()					LK2MC_cart_power(false)
-void LK2MC_activity_led(bool);
+void LK2MC_activity_led(uint8_t);
 #define ACTIVITY_LED_ON()					LK2MC_activity_led(true)
 #define ACTIVITY_LED_OFF()					LK2MC_activity_led(false)
 #define SET_VOLTAGE_3_3V()					{}
