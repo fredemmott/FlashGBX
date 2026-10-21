@@ -50,6 +50,8 @@ jobs:
 
       - name: Fetch the Chromatic drivers
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./release-scripts/fetch-drivers.ps1 -Version '${{ steps.version.outputs.release }}' -Destination drivers
 
       - name: Build

@@ -112,7 +112,12 @@ try {
     Copy-Item -LiteralPath $driver.FullName -Destination $Destination -Force
 
     Write-Host "Cartridge IO driver catalog, from fredemmott's v$Version"
-    $release = Invoke-RestMethod -Uri ($ReleasesApi + [uri]::EscapeDataString("v$Version"))
+    # A shared CI runner's address is usually past the anonymous API rate limit
+    $headers = @{}
+    if ($env:GITHUB_TOKEN) {
+        $headers.Authorization = "Bearer $env:GITHUB_TOKEN"
+    }
+    $release = Invoke-RestMethod -Headers $headers -Uri ($ReleasesApi + [uri]::EscapeDataString("v$Version"))
     $asset = $release.assets |
         Where-Object { $_.name -like '*_Windows-x64.zip' } |
         Select-Object -First 1
