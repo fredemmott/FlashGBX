@@ -9,8 +9,8 @@
 
     - GowinUSBCableDriverV5_for_win7+.exe, the Gowin USB cable driver, which
       openFPGALoader needs to load the FPGA. It's distributed only inside
-      MRUpdater, a PyInstaller executable, so MRUpdater is downloaded and
-      unpacked to get it.
+      ChromaticFirmwareUpdater, a PyInstaller executable, so that is
+      downloaded and unpacked to get it.
     - chromatic_cartio.cat, the signed catalog for the cartridge IO driver.
       Windows won't install that driver from an unsigned catalog, so it comes
       from the portable zip of fredemmott's release for -Version. It's only
@@ -18,7 +18,7 @@
       byte for byte, as the signature covers the .inf.
 
     The driver installer isn't Authenticode-signed, so it's checked against
-    the SHA-256 of the copy MRUpdater carried when this was written. The
+    the SHA-256 of the copy ChromaticFirmwareUpdater carried when this was written. The
     catalog's signature is checked.
 
 .PARAMETER Version
@@ -28,8 +28,8 @@
 .PARAMETER Destination
     Where to put the two files. Not under cache, which win32.ps1 clears.
 
-.PARAMETER MRUpdaterPath
-    An MRUpdater.exe already on disk. Downloaded when not given.
+.PARAMETER ChromaticFirmwareUpdaterPath
+    A ChromaticFirmwareUpdater.exe already on disk. Downloaded when not given.
 
 .EXAMPLE
     ./release-scripts/fetch-drivers.ps1 -Version 5.1+fredemmott.3 -Destination drivers
@@ -45,12 +45,13 @@ param (
     [Parameter(Mandatory)]
     [string]$Destination,
 
-    [string]$MRUpdaterPath
+    [string]$ChromaticFirmwareUpdaterPath
 )
 
 $ErrorActionPreference = 'Stop'
 
-$MRUpdaterUrl = 'https://s3.us-east-1.amazonaws.com/updates.modretro.com/apps/MRUpdater.exe'
+$ChromaticFirmwareUpdaterUrl = 'https://s3.us-east-1.amazonaws.com/updates.modretro.com/apps/' +
+    'ChromaticFirmwareUpdater.exe'
 $GowinDriverName = 'GowinUSBCableDriverV5_for_win7+.exe'
 $GowinDriverSha256 = 'B026197755328AA043FC93B84A6F2AFD57F6AFBE9C8AE4B9106AD18F8AA085B9'
 $ReleasesApi = 'https://api.github.com/repos/fredemmott/FlashGBX/releases/tags/'
@@ -77,20 +78,20 @@ $workspace = Join-Path ([IO.Path]::GetTempPath()) ('flashgbx-drivers-' + (New-Gu
 $null = New-Item -ItemType Directory -Force -Path $workspace
 
 try {
-    Write-Host 'Gowin USB cable driver, from MRUpdater'
-    if (-not $MRUpdaterPath) {
-        $MRUpdaterPath = Join-Path $workspace 'MRUpdater.exe'
-        Invoke-WebRequest -Uri $MRUpdaterUrl -OutFile $MRUpdaterPath
+    Write-Host 'Gowin USB cable driver, from ChromaticFirmwareUpdater'
+    if (-not $ChromaticFirmwareUpdaterPath) {
+        $ChromaticFirmwareUpdaterPath = Join-Path $workspace 'ChromaticFirmwareUpdater.exe'
+        Invoke-WebRequest -Uri $ChromaticFirmwareUpdaterUrl -OutFile $ChromaticFirmwareUpdaterPath
     }
     & python -m pip install --quiet pyinstxtractor-ng
     if ($LASTEXITCODE -ne 0) {
-        throw 'Could not install pyinstxtractor-ng, which unpacks MRUpdater.'
+        throw 'Could not install pyinstxtractor-ng, which unpacks ChromaticFirmwareUpdater.'
     }
     Push-Location $workspace
     try {
-        & python -m pyinstxtractor_ng $MRUpdaterPath | Out-String | Write-Verbose
+        & python -m pyinstxtractor_ng $ChromaticFirmwareUpdaterPath | Out-String | Write-Verbose
         if ($LASTEXITCODE -ne 0) {
-            throw "Could not unpack $MRUpdaterPath."
+            throw "Could not unpack $ChromaticFirmwareUpdaterPath."
         }
     }
     finally {
@@ -100,11 +101,11 @@ try {
         Where-Object Name -EQ $GowinDriverName |
         Select-Object -First 1
     if (-not $driver) {
-        throw "MRUpdater no longer contains $GowinDriverName."
+        throw "ChromaticFirmwareUpdater no longer contains $GowinDriverName."
     }
     $hash = (Get-FileHash -LiteralPath $driver.FullName -Algorithm SHA256).Hash
     if ($hash -ne $GowinDriverSha256) {
-        throw ("MRUpdater now carries a different $GowinDriverName (SHA-256 $hash). " +
+        throw ("ChromaticFirmwareUpdater now carries a different $GowinDriverName (SHA-256 $hash). " +
             'Check the new one, then update $GowinDriverSha256 in this script.')
     }
     Write-Host "  SHA-256 $hash, as expected"

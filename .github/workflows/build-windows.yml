@@ -1,8 +1,9 @@
 name: Build Windows installer
 
 # Runs fredemmott's release script unsigned, with the two Chromatic drivers his
-# installer ships: the Gowin cable driver out of MRUpdater, and the signed
-# cartridge IO driver catalog out of his release for the same version.
+# installer ships: the Gowin cable driver out of ChromaticFirmwareUpdater, and
+# the signed cartridge IO driver catalog out of his release for the same
+# version.
 
 on:
   push:
