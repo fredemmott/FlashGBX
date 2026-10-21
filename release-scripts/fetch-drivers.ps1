@@ -122,7 +122,8 @@ try {
         Where-Object { $_.name -like '*_Windows-x64.zip' } |
         Select-Object -First 1
     if (-not $asset) {
-        throw "fredemmott's v$Version has no portable Windows zip."
+        $names = ($release.assets | ForEach-Object name) -join ', '
+        throw "fredemmott's v$Version has no portable Windows zip. Its assets: $names"
     }
     $zip = Join-Path $workspace $asset.name
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
