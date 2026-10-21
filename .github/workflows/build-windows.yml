@@ -21,6 +21,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,4 +70,41 @@ jobs:
           path: |
             artifacts/*.zip
             artifacts/*.pdb
+            setup/*_Setup.exe
           if-no-files-found: error
+
+  # Publishes a release the first time a version is built, and tags the commit
+  # that was built. A later build of the same version leaves the release alone.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v${{ needs.build.outputs.release }}
+    steps:
+      - name: Check for an existing release
+        id: existing
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$TAG is already released"
+            echo 'found=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.existing.outputs.found != 'true'
+        with:
+          pattern: FlashGBX-*-Windows
+          path: release-files
+          merge-multiple: true
+
+      - name: Publish the release
+        if: steps.existing.outputs.found != 'true'
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target '${{ inputs.ref || github.sha }}' \
+            --title "FlashGBX ${TAG#v}" \
+            --generate-notes \
+            $(find release-files -type f)
