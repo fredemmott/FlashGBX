@@ -30,6 +30,8 @@ class Device:
             dprint(
                 f"No matching USB serial device found - looked for VID {self._vendorID:04x} and PID {self._productID:04x}")
             return self.ERROR_DEVICE_NOT_FOUND
+        dprint(
+            f"Found USB serial device with VID {self._vendorID:04x} and PID {self._productID:04x}")
         res = self._papi.papi_open(self._vendorID, self._productID)
         if res == self.ERROR_DEVICE_NOT_FOUND:
             dprint("Found matching USB serial device but no libusb device, assuming incompatible firmware")

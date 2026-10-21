@@ -21,7 +21,7 @@
 
 #define LK_DEVICE_NAME 						"Chromatic"
 #define LK_PCB_VERSION						1
-#define LK_POWER_CONTROL_SUPPORT			false
+#define LK_POWER_CONTROL_SUPPORT			true
 #define LK_BOOTLOADER_RESET_SUPPORT			false
 #define LK_CART_PRESENCE_SWITCH_SUPPORT			true
 #define LK_CART_MODE_SWITCH_SUPPORT			false
@@ -118,14 +118,16 @@ void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
 #define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)
 
-#define CART_POWER_ON()						{}
-#define CART_POWER_OFF()					{}
-#define ACTIVITY_LED_ON()					{}
-#define ACTIVITY_LED_OFF()					{}
+void LK2MC_cart_power(uint8_t);
+#define CART_POWER_ON()						LK2MC_cart_power(true)
+#define CART_POWER_OFF()					LK2MC_cart_power(false)
+void LK2MC_activity_led(uint8_t);
+#define ACTIVITY_LED_ON()					LK2MC_activity_led(true)
+#define ACTIVITY_LED_OFF()					LK2MC_activity_led(false)
 #define SET_VOLTAGE_3_3V()					{}
 #define SET_VOLTAGE_5V()					{}
-#define AUTO_POWEROFF_RESUME()				{}
-#define AUTO_POWEROFF_SUSPEND()				{}
+#define AUTO_POWEROFF_RESUME()					{ auto_off_timer_suspended = false; }
+#define AUTO_POWEROFF_SUSPEND()					{ auto_off_timer_suspended = true; }
 
 uint32_t LK2MC_TIMESTAMP_NOW();
 #define TIMESTAMP_NOW()						LK2MC_TIMESTAMP_NOW()

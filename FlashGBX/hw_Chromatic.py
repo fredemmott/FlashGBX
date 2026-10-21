@@ -40,14 +40,35 @@ except ImportError:
 
 class GbxDevice(LK_Device):
     DEVICE_NAME = "Chromatic"
-    REQUIRED_FW_VERSION = "2026.09.27.0"
+    REQUIRED_PROTO_VERSION = 1
+
+    PCB_VERSIONS = {
+        # { VERSION_DET2, VERSION_DET} where VERSION_DET is *high* on old versions, *low* on new versions
+        #
+        # This matches the raw `VERSION_DET` inputs on `top.v` on the FPGA; note that this is the *inverse* of the
+        # pcb_ver bit sent in FPGA -> MCU messages.
+        #
+        # The current only known revision is `0b11`, tested on a Mid-2025 refresh Chromatic
+        0: "0b00",
+        1: "0b01",
+        2: "0b10",
+        3: "0b11",
+    }
 
     DEVICE : MicrocodeDevice | None = None
 
     USB_VENDOR_ID = 0x374e
-    USB_PRODUCT_ID = 0x0101
-
-    PORT = f"libusb:{USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x}"
+    # Serial number is part of the product ID
+    USB_PRODUCT_IDS = [
+        0x0101,
+        0x0102,
+        0x0103,
+        0x0104,
+        0x0105,
+        0x0106,
+        0x0107,
+        0x0108,
+    ]
 
     # - Align with 512-byte USB packet sizes
     # - Fit in a uint16 as the LK protocol requires it
@@ -55,6 +76,15 @@ class GbxDevice(LK_Device):
     MAX_BUFFER_WRITE = MAX_BUFFER_READ
 
     _c_callbacks = []
+
+    def _make_port(self, product_id: int):
+        return f"libusb:{self.USB_VENDOR_ID:04x}:{product_id:04x}"
+    
+    def _parse_port(self, string: str) -> int | None:
+        for product_id in self.USB_PRODUCT_IDS:
+            if string == self._make_port(product_id):
+                return product_id
+        return None
 
     def __init__(self):
         super().__init__()
@@ -91,6 +121,9 @@ class GbxDevice(LK_Device):
 
         self._papi.papi_get_fw_info.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
         self._papi.papi_get_fw_info.restype = ctypes.c_uint16
+
+        self._papi.papi_get_state_bits.argtypes = []
+        self._papi.papi_get_state_bits.restype = ctypes.c_uint8
 
         self._papi.papi_close.argtypes = []
         self._papi.papi_close.restype = None
@@ -146,10 +179,18 @@ class GbxDevice(LK_Device):
         dprint(message)
 
     def _try_connect(self, port) -> MicrocodeDevice | None:
-        if port is not None and port != self.PORT:
+        if port is not None:
+            product_id = self._parse_port(port)
+            if product_id is None:
+                return port
+        else:
+            for product_id in self.USB_PRODUCT_IDS:
+                ret = self._try_connect(self._make_port(product_id))
+                if ret is not None:
+                    return ret
             return None
 
-        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, self.USB_PRODUCT_ID)
+        dev = MicrocodeDevice(self._papi, self.USB_VENDOR_ID, product_id)
         res = dev.open()
         match res:
             case MicrocodeDevice.STATUS_SUCCESS: # Success
@@ -171,6 +212,9 @@ class GbxDevice(LK_Device):
             dev.close()
             return None
 
+        self.PORT = self._make_port(product_id)
+        dprint(f"Connected on {self.PORT}")
+
         challenge = os.urandom(1)[0]
         expected = (~challenge) & 0xFF
         dev.write(bytearray([self.DEVICE_CMD["PING"], challenge]))
@@ -182,7 +226,6 @@ class GbxDevice(LK_Device):
         dprint(f"Initial ping OK: 0x{challenge:02X} -> 0x{expected:02X}")
 
         return dev
-
 
     def TryConnect(self, port, baudrate):
         dev = self._try_connect(port)
@@ -294,8 +337,8 @@ class GbxDevice(LK_Device):
                 dprint(f"Expected {len(cartio_firmware_id)} bytes, got {size}")
                 return False
 
-            if size < 8:
-                dprint(f"Expected at least 8 bytes, got {size}")
+            if size < 11:
+                dprint(f"Expected at least 11 bytes, got {size}")
 
             # BCD
             year = consume(2).hex()
@@ -307,15 +350,26 @@ class GbxDevice(LK_Device):
             upstream_major = consume(1)[0]
             upstream_minor = consume(1)[0]
 
+            min_proto_version = consume(1)[0]
+            max_proto_version = consume(1)[0]
+
+            # --- ROM ENDS HERE ---
+
+            # This is appended to the ROM at runtime based on the FPGA VERSION_DET flags
+
+            pcb_ver = consume(1)[0] & 0b11
+
             self.FW["device_name"] = self.DEVICE_NAME
             self.FW["pcb_name"] = self.DEVICE_NAME
+            self.FW["pcb_ver"] = pcb_ver
             self.FW["fw_dt"] = f"{year}-{month}-{day}"
             self.FW["hw_Chromatic/fw_ver/CartIO"] = f"{year}.{month}.{day}.{revision}"
             self.FW["hw_Chromatic/fw_ver/Upstream"] = f"{upstream_major}.{upstream_minor}"
 
-            if self.FW["hw_Chromatic/fw_ver/CartIO"] != self.REQUIRED_FW_VERSION:
-                dprint(f"Running microcode firmware, but '{self.FW['hw_Chromatic/fw_ver/CartIO']}' is not a supported version (need v{self.REQUIRED_FW_VERSION})")
+            if (min_proto_version > self.REQUIRED_PROTO_VERSION) or (max_proto_version < self.REQUIRED_PROTO_VERSION):
+                dprint(f"Required protocol version {self.REQUIRED_PROTO_VERSION} is not within firmware range [{min_proto_version}, {max_proto_version}]")
                 return False
+
             dprint("Firmware matches")
             return True
 
@@ -415,7 +469,9 @@ class GbxDevice(LK_Device):
         info = data[:8]
         keys = ["cfw_id", "fw_ver", "pcb_ver", "fw_ts"]
         values = struct.unpack(">cHBI", bytearray(info))
-        self.FW.update(zip(keys, values))
+        # Preserve pcb_ver from the non-LK firmware information
+        self.FW.update({k: v for k, v in zip(keys, values) if k != "pcb_ver"})
+
         self.FW["cfw_id"] = self.FW["cfw_id"].decode('ascii')
         self.FW["fw_dt"] = datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(
             microsecond=0).isoformat()
@@ -530,7 +586,7 @@ class GbxDevice(LK_Device):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        return f"L{self.FW['fw_ver']} / MC v{self.FW["hw_Chromatic/fw_ver/CartIO"]} / ModRetro v{self.FW['hw_Chromatic/fw_ver/Upstream']}"
+        return f"L{self.FW['fw_ver']} / MC v{self.FW["hw_Chromatic/fw_ver/CartIO"]} / ModRetro v{self.FW['hw_Chromatic/fw_ver/Upstream']} / PCB {self.GetPCBVersion()}"
 
     def GetFullNameExtended(self, more=False):
         return f"{self.GetFullName()} - {self.GetFirmwareVersion()}"
@@ -573,26 +629,10 @@ class GbxDevice(LK_Device):
         pass
 
     def SupportsBootloaderReset(self):
-        return self.FW["bootloader_reset"]
+        return False
 
     def BootloaderReset(self):
-        if not self.SupportsBootloaderReset(): return False
-        dprint("Resetting to bootloader...")
-        try:
-            self._write(self.DEVICE_CMD["BOOTLOADER_RESET"], wait=True)
-            self._write(1)
-            self.Close()
-            return True
-        except Exception as e:
-            print("Disconnecting...", e)
-            return False
+        raise NotImplementedError
 
     def SupportsAudioAsWe(self):
         return True
-
-    def Close(self, cartPowerOff=False):
-        if self.DEVICE is None: return
-        if self.DEVICE.is_open:
-            self.DEVICE.close()
-        self.DEVICE = None
-        self.MODE = None

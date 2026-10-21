@@ -197,6 +197,7 @@ struct Worker {
         _thread = std::jthread { &Worker::thread_main };
     }
     ~Worker() {
+        _thread = {};
         mc_transport_flush();
     }
 
@@ -228,6 +229,9 @@ private:
                 if (!mc_transport_enqueue_tx(KeepAlive, BytesPerCommand)) {
                     LogError("Failed to enqueue keep-alive NOP, shutting down worker. Device unplugged?");
                     break;
+                }
+                if (mc_transport_is_open()) {
+                    mc_maybe_auto_power_off();
                 }
                 continue;
             }
@@ -446,4 +450,18 @@ extern "C" uint16_t papi_get_fw_info(uint8_t* const buffer, const uint16_t count
     std::ignore = mc_transport_enqueue_rx(buffer + 1, toRead);
     mc_transport_flush();
     return size;
+}
+
+extern "C" uint8_t papi_get_state_bits() {
+    static constexpr uint8_t Commands[] = {
+        static_cast<uint8_t>(Command::GetStateBits),
+        0,
+        static_cast<uint8_t>(Command::Flush),
+        0,
+    };
+    std::ignore = mc_transport_enqueue_tx(Commands, std::size(Commands));
+    uint8_t buffer {};
+    std::ignore = mc_transport_enqueue_rx(&buffer, 1);
+    mc_transport_flush();
+    return buffer;
 }

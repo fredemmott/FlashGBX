@@ -15,6 +15,7 @@ extern "C" {
 #include <future>
 #include <list>
 #include <ranges>
+#include <thread>
 #include <utility>
 
 #include <cstring>
@@ -23,7 +24,16 @@ namespace {
 
 enum class StateBits : uint8_t {
     CartPresent = 1 << 0,
+    CartPowered = 1 << 1,
+    CartReady = 1 << 2,
+    ActivityLED = 1 << 3,
 };
+
+template<StateBits T>
+[[nodiscard]]
+bool HasBit(const StateBits v) {
+    return (std::to_underlying(v) & std::to_underlying(T)) == std::to_underlying(T);
+}
 
 enum class SetPinsA : uint8_t {
     CLK = 1 << 0,
@@ -308,8 +318,28 @@ struct output_enable_state_t {
 };
 
 output_enable_state_t& output_enable_state() {
-    static output_enable_state_t state;
+    static output_enable_state_t state {};
     return state;
+}
+
+struct address_state_t {
+    uint16_t valid {};
+    uint16_t value {};
+};
+
+address_state_t& address_state() {
+    static address_state_t state {};
+    return state;
+}
+
+auto& epoch() {
+    static std::chrono::steady_clock::time_point ret {};
+    return ret;
+}
+
+void update_lk_runtime() {
+    using namespace std::chrono;
+    lk_runtime = duration_cast<milliseconds>(steady_clock::now() - epoch()).count();
 }
 
 } // namespace
@@ -452,8 +482,7 @@ extern "C" uint32_t LK2MC_TIMESTAMP_NOW() {
         std::ratio_less_equal<clock::period, std::milli>::value,
         "Clock granularity is insufficent");
 
-    static const auto epoch = clock::now();
-    return duration_cast<milliseconds>(clock::now() - epoch).count();
+    return duration_cast<milliseconds>(clock::now() - epoch()).count();
 }
 
 extern "C" uint8_t LK2MC_DMG_DATA_GET() {
@@ -479,7 +508,7 @@ extern "C" void LK2MC_DELAY_MICROS(const uint32_t duration) {
     const auto remainder = hundredsOfNS % MaxHundredsOfNSDelay;
 
     auto& cq = CommandQueue::get();
-    for (int i = 0; i < completeDelays; ++i) {
+    for (uint64_t i = 0; i < completeDelays; ++i) {
         cq.push(Command::Delay, HundredsOfNSToDelayArg(MaxHundredsOfNSDelay));
     }
     if (remainder) {
@@ -513,7 +542,15 @@ extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     case PIN_WR: a(SetPinsA::WR); break;
     case PIN_RD: a(SetPinsA::RD); break;
     case PIN_CS: a(SetPinsA::CS); break;
-    case LK2MC_PIN_A15: b(SetPinsB::A15); break;
+    case LK2MC_PIN_A15:
+        b(SetPinsB::A15);
+        address_state().value &= ~(1 << 15);
+        if (high) {
+            address_state().value |= static_cast<uint16_t>(1 << 15);
+        }
+        address_state().valid |= 1 << 15;
+        output_enable_state().address = true;
+        break;
     case PIN_CS2: b(SetPinsB::RST); break; // CS2 is AGB name for RST pin
     case PIN_AUDIO:
         b(SetPinsB::AUDIO);
@@ -588,7 +625,7 @@ extern "C" void LK2MC_OUTPUT_ENABLE(const uint8_t tristate_pin, const uint8_t oe
     }
 }
 
-extern "C" void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
+extern "C" void LK2MC_SET_ADDR_PIN(const uint8_t pin, const uint8_t high) {
     if (pin != 15) [[unlikely]] {
         LogError("SET_ADDR_PIN called with pin != 15 ({})", pin);
         return;
@@ -598,10 +635,20 @@ extern "C" void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high) {
 
 extern "C" void LK2MC_DMG_ADDR_SET(const uint16_t address) {
     auto& cq = CommandQueue::get();
-    cq.append({
-        {Command::SetAddressMSB, static_cast<uint8_t>(address >> 8)},
-        {Command::SetAddressLSB, static_cast<uint8_t>(address & 0xff)},
-    });
+    const auto msbMatch = ((address_state().valid & 0xFF00) == 0xFF00)
+        && (address_state().value & 0xFF00) == (address & 0xFF00);
+    if (!msbMatch) {
+        cq.push(Command::SetAddressMSB, static_cast<uint8_t>(address >> 8));
+        address_state().valid |= 0xFF00;
+        address_state().value = (address & 0xFF00) | static_cast<uint16_t>(address_state().value & 0xFF);
+    }
+    const auto lsbMatch = ((address_state().valid & 0xFF) == 0xFF)
+        && (address_state().value & 0xFF) == (address & 0xFF);
+    if (!lsbMatch) {
+        cq.push(Command::SetAddressLSB, static_cast<uint8_t>(address & 0xFF));
+        address_state().valid |= 0xFF;
+        address_state().value = (address & 0xFF) | static_cast<uint16_t>(address_state().value & 0xFF00);
+    }
 }
 
 extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
@@ -611,7 +658,24 @@ extern "C" void LK2MC_DMG_DATA_SET(const uint8_t data) {
 extern "C" void mc_exec(const uint8_t command) {
     auto& cq = CommandQueue::get();
     cq.start_batch();
+    update_lk_runtime();
     lk_loop(command);
+    cq.end_batch();
+
+    mc_maybe_auto_power_off();
+}
+
+extern "C" void mc_maybe_auto_power_off() {
+    if (auto_off_timer_suspended) {
+        return;
+    }
+    if (!_lk_var8[LK_VAR8_AUTO_POWEROFF_ENABLED]) {
+        return;
+    }
+    update_lk_runtime();
+    auto& cq = CommandQueue::get();
+    cq.start_batch();
+    lk_cart_power_off_proc();
     cq.end_batch();
 }
 
@@ -620,16 +684,19 @@ extern "C" uint8_t mc_standalone_ping(const uint8_t cookie) {
 }
 
 extern "C" void mc_init() {
-    const mc_transport_callbacks callbacks {
+    static constexpr mc_transport_callbacks Callbacks {
         .on_tx_progress = &tx_progress_callback,
     };
-    mc_transport_set_callbacks(&callbacks);
+    mc_transport_set_callbacks(&Callbacks);
+    auto_off_timer_suspended = false;
+    address_state() = {};
 
-    output_enable_state() = {};
+    epoch() = std::chrono::steady_clock::now();
 }
 
 extern "C" void mc_reset() {
     mc_transport_set_callbacks(nullptr);
+    epoch() = {};
 }
 
 extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t count) {
@@ -640,4 +707,50 @@ extern "C" void LK2MC_lk_recv_from_host(uint8_t* const data, const uint16_t coun
 extern "C" void LK2MC_lk_send_to_host(const uint8_t* const data, const uint16_t count) {
     LK_ASYNC_FLUSH(nullptr, 0);
     lk_send_to_host(data, count);
+}
+
+extern "C" void LK2MC_cart_power(const uint8_t on) {
+    static constexpr uint8_t Value = std::to_underlying(StateBits::CartPowered) & 0xFF;
+    static constexpr uint8_t Select = Value << 4;
+
+    auto& cq = CommandQueue::get();
+
+    const auto arg = static_cast<uint8_t>(Select | (on ? Value : 0));
+    cq.push(Command::SetStateBits, arg);
+
+    output_enable_state() = {};
+    address_state() = {};
+
+    if (!on) {
+        return;
+    }
+
+    while (true) {
+        static constexpr uint8_t GetStateBits[] = {
+            static_cast<uint8_t>(Command::GetStateBits),
+            0,
+            static_cast<uint8_t>(Command::Flush),
+            0,
+        };
+        cq.push(Command::GetStateBits);
+        uint8_t state {};
+        LK2MC_flush(&state, 1);
+
+        if (!HasBit<StateBits::CartPresent>(static_cast<StateBits>(state))) {
+            dprint("no cart - {}", state);
+            return;
+        }
+        if (HasBit<StateBits::CartReady>(static_cast<StateBits>(state))) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+extern "C" void LK2MC_activity_led(const uint8_t on) {
+    static constexpr uint8_t Value = std::to_underlying(StateBits::ActivityLED) & 0xFF;
+    static constexpr uint8_t Select = Value << 4;
+
+    const auto arg = Select | (on ? Value : 0);
+    CommandQueue::get().push(Command::SetStateBits, arg);
 }

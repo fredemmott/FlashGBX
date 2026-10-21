@@ -154,6 +154,52 @@ void lk_loop(u8 command) {
 					_delay_ms(2);
 				}
 
+				// test every pin (added for LK2MC)
+				PIN_CLK_H();
+				PIN_CLK_L();
+				PIN_CLK_H();
+				PIN_CLK_L();
+				PIN_WR_H();
+				PIN_WR_L();
+				PIN_WR_H();
+				PIN_WR_L();
+				PIN_RD_H();
+				PIN_RD_L();
+				PIN_RD_H();
+				PIN_RD_L();
+				PIN_CS_H();
+				PIN_CS_L();
+				PIN_CS_H();
+				PIN_CS_L();
+				RAW_DMG_ADDR_SET(0);
+				RAW_DMG_DATA_DIR_IN();
+				RAW_DMG_ADDR_DIR_OUT();
+				for (int i = 0; i < 16; ++i) {
+					RAW_DMG_ADDR_SET(1 << i);
+					RAW_DMG_ADDR_SET(0);
+					RAW_DMG_ADDR_SET(1 << i);
+					RAW_DMG_ADDR_SET(0);
+				}
+				RAW_DMG_ADDR_SET(0xFFFF);
+				RAW_DMG_DATA_SET(0);
+				RAW_DMG_DATA_DIR_OUT();
+				for (int i =0; i< 8; ++i) {
+					RAW_DMG_DATA_SET(1 << i);
+					RAW_DMG_DATA_SET(0);
+					RAW_DMG_DATA_SET(1 << i);
+					RAW_DMG_DATA_SET(0);
+				}
+				RAW_DMG_DATA_SET(0xFF);
+				PIN_CS2_H();
+				PIN_CS2_L();
+				PIN_CS2_H();
+				PIN_CS2_L();
+				PIN_AUDIO_H();
+				PIN_AUDIO_L();
+				PIN_AUDIO_H();
+				PIN_AUDIO_L();
+
+
 				lk_conn_send_u8(LK_STATUS_OK);
 			}
 			break;

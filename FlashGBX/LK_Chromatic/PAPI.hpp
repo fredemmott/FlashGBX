@@ -33,6 +33,9 @@ LK_CHROMATIC_EXPORT int papi_is_open();
 [[nodiscard]]
 LK_CHROMATIC_EXPORT uint16_t papi_get_fw_info(uint8_t*, uint16_t);
 
+[[nodiscard]]
+LK_CHROMATIC_EXPORT uint8_t papi_get_state_bits();
+
 LK_CHROMATIC_EXPORT void papi_send_to_lk(uint8_t*, uint16_t);
 LK_CHROMATIC_EXPORT void papi_send_to_lk_reset_output_buffer();
 LK_CHROMATIC_EXPORT void papi_send_to_lk_flush();
