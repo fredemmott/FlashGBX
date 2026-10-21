@@ -13,7 +13,7 @@
       downloaded and unpacked to get it.
     - chromatic_cartio.cat, the signed catalog for the cartridge IO driver.
       Windows won't install that driver from an unsigned catalog, so it comes
-      from the portable zip of fredemmott's release for -Version. It's only
+      from the cartridge IO driver zip of fredemmott's release for -Version. It's only
       used if the .inf beside it matches release-scripts/chromatic_cartio.inf
       byte for byte, as the signature covers the .inf.
 
@@ -119,28 +119,30 @@ try {
     }
     $release = Invoke-RestMethod -Headers $headers -Uri ($ReleasesApi + [uri]::EscapeDataString("v$Version"))
     $asset = $release.assets |
-        Where-Object { $_.name -like '*_Windows-x64.zip' } |
+        Where-Object { $_.name -like 'chromatic_cartio-driver-*.zip' } |
         Select-Object -First 1
     if (-not $asset) {
         $names = ($release.assets | ForEach-Object name) -join ', '
-        throw "fredemmott's v$Version has no portable Windows zip. Its assets: $names"
+        throw "fredemmott's v$Version has no cartridge IO driver zip. Its assets: $names"
     }
     $zip = Join-Path $workspace $asset.name
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
     $unzipped = Join-Path $workspace 'release'
     Expand-Archive -LiteralPath $zip -DestinationPath $unzipped
-    $releaseDriver = Join-Path $unzipped 'Drivers/chromatic_cartio'
-    $catalog = Join-Path $releaseDriver 'chromatic_cartio.cat'
-    if (-not (Test-Path -LiteralPath $catalog)) {
-        throw "fredemmott's v$Version zip has no Drivers/chromatic_cartio/chromatic_cartio.cat."
+    $catalog = Get-ChildItem -LiteralPath $unzipped -Recurse -File -Filter chromatic_cartio.cat |
+        Select-Object -First 1
+    $theirInf = Get-ChildItem -LiteralPath $unzipped -Recurse -File -Filter chromatic_cartio.inf |
+        Select-Object -First 1
+    if (-not $catalog -or -not $theirInf) {
+        throw "fredemmott's v$Version driver zip has no chromatic_cartio.cat and chromatic_cartio.inf."
     }
-    $theirs = (Get-FileHash -LiteralPath (Join-Path $releaseDriver 'chromatic_cartio.inf')).Hash
+    $theirs = (Get-FileHash -LiteralPath $theirInf.FullName).Hash
     $ours = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'chromatic_cartio.inf')).Hash
     if ($theirs -ne $ours) {
         throw "chromatic_cartio.inf differs from fredemmott's v$Version, so his catalog doesn't cover it."
     }
-    Assert-Signed -Path $catalog
-    Copy-Item -LiteralPath $catalog -Destination $Destination -Force
+    Assert-Signed -Path $catalog.FullName
+    Copy-Item -LiteralPath $catalog.FullName -Destination $Destination -Force
 }
 finally {
     Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
