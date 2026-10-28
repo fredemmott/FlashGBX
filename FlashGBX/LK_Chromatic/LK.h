@@ -1,13 +1,13 @@
 /*
-	LK Firmware version L15
+	LK Firmware version L16
 	Author: Lesserkuma (github.com/Lesserkuma)
-	Last Modified: 2026-08-28T21:32:50+02:00
+	Last Modified: 2026-10-20T23:17:31+02:00
 */
 
 #ifndef _LK_H_
 #define _LK_H_
 
-#define __BUILD_TIMESTAMP__	1787946056
+#define __BUILD_TIMESTAMP__	1793184971
 //#define DEBUG_VERSION
 
 #include <stdint.h>
@@ -18,6 +18,18 @@
 #else
 	#include "LK_device.h"
 #endif
+
+#ifndef __lk_fwconst
+	#define __lk_fwconst
+#endif
+
+// GBA 8-bit save bus (SRAM/Flash): A0-A15 and D0-D7 share the DMG pin groups.
+#define RAW_AGB_SAVE_ADDR_SET(addr)			RAW_DMG_ADDR_SET(addr)
+#define RAW_AGB_SAVE_DATA_SET(data)			RAW_DMG_DATA_SET(data)
+#define RAW_AGB_SAVE_ADDR_DIR_OUT()			RAW_DMG_ADDR_DIR_OUT()
+#define RAW_AGB_SAVE_DATA_DIR_OUT()			RAW_DMG_DATA_DIR_OUT()
+#define RAW_AGB_SAVE_DATA_DIR_IN()			RAW_DMG_DATA_DIR_IN()
+#define RAW_AGB_SAVE_DATA_GET()				RAW_DMG_DATA_GET()
 
 #ifndef NULL
 	#define NULL ((void *)0)
@@ -43,7 +55,7 @@
 #endif
 #endif
 
-#define LK_FIRMWARE_VERSION			15
+#define LK_FIRMWARE_VERSION			16
 #define LK_MODE_DMG					1
 #define LK_MODE_AGB					2
 #define LK_MODE_ROM_READ			1
@@ -121,17 +133,21 @@
 #define LK_CMD_AGB_CART_READ_3D_MEMORY		0xC8
 #define LK_CMD_AGB_BOOTUP_SEQUENCE			0xC9
 #define LK_CMD_AGB_READ_GPIO_RTC			0xCA
+#define LK_CMD_AGB_EREADER_CALIBRATE		0xCB
+#define LK_CMD_AGB_EREADER_SCAN				0xCC
 #define LK_CMD_DMG_FLASH_WRITE_BYTE			0xD1
 #define LK_CMD_AGB_FLASH_WRITE_SHORT		0xD2
 #define LK_CMD_FLASH_PROGRAM				0xD3
 #define LK_CMD_CART_WRITE_FLASH_CMD			0xD4
 #define LK_CMD_CALC_CRC32					0xD5
+#define LK_CMD_CART_UNLOCK_SEQUENCE			0xD6
 #define LK_CMD_BOOTLOADER_RESET				0xF1
 #define LK_CMD_CART_PWR_ON					0xF2
 #define LK_CMD_CART_PWR_OFF					0xF3
 #define LK_CMD_QUERY_CART_PWR				0xF4
 #define LK_CMD_SET_PIN						0xF5
 #define LK_CMD_GET_SWITCH_STATE				0xF6
+#define LK_CMD_GET_DEVICE_SERIAL			0xFD
 #define LK_CMD_PING							0xFE
 
 // *** FIRMWARE VARIABLES *** //
@@ -169,7 +185,7 @@
 #define LK_VAR8_DMG_AUDIO_ENABLED			0x11
 
 // *** GLOBAL VARIABLES *** //
-extern u32 lk_runtime;
+extern volatile u32 lk_runtime;
 extern u32 _lk_var32[LK_NUM_OF_VARIABLES_32BIT];
 extern u16 _lk_var16[LK_NUM_OF_VARIABLES_16BIT];
 extern u8 _lk_var8[LK_NUM_OF_VARIABLES_8BIT];
@@ -186,6 +202,14 @@ extern u32 time_start;
 extern bool auto_off_timer_suspended;
 extern bool activity_done;
 extern u32 activity_last_run;
+struct lk_ereader_state {
+	u8 control;
+	u8 brightness;
+	u8 vertical;
+	u16 pwm;
+	u32 clock_count;
+};
+extern struct lk_ereader_state _lk_ereader;
 
 // *** FUNCTION PROTOTYPES *** //
 void lk_loop(u8 command);
@@ -197,6 +221,7 @@ u32 lk_conn_recv_u32(void);
 void lk_conn_send_u8(u8 data);
 void lk_conn_send_u16(u16 data);
 void lk_conn_send_u32(u32 data);
+void lk_clock_toggle(u32 count, u8 freq_mhz);
 void lk_set_mode(u8 mode);
 void lk_dmg_set_address(u16 address);
 void lk_dmg_mbc6_mmsa_write_flash_bytes(void);
@@ -244,6 +269,7 @@ void lk_agb_cart_write_flash_byte(u32 address, u16 value);
 void lk_agb_cart_write_flash_program_sequence(void);
 void lk_agb_cart_write_flash(u8 flash_type);
 void lk_agb_cart_read_data_3d_memory(void);
+void lk_agb_verify_saveflash_data(u16 addr, u8 comp);
 void lk_agb_verify_data(u32 addr, u16 comp);
 void lk_agb_verify_status_register(u32 addr);
 void lk_agb_flash2advance_buffered(u16 transfer_size, u16 buffer_offset, u32 sector_address);
@@ -257,7 +283,28 @@ void lk_cart_power_off_proc(void);
 void lk_agb_read_gpio_rtc(void);
 void lk_agb_flash_gbamp(void);
 
-static const u32 crc32_table[] = {
+u8 lk_agb_ereader_calibrate(u8 factory_brightness, u8 vertical, u8* calibrated);
+void lk_agb_ereader_scan(const u8* settings, u32 threshold_tag);
+void lk_agb_ereader_idle(void);
+u8 lk_agb_ereader_read(u16 address);
+void lk_agb_ereader_write(u16 address, u8 value);
+void lk_agb_ereader_read_line(u8* output);
+void lk_agb_ereader_control_set(u8 set, u8 clear);
+void lk_agb_ereader_sio_start(void);
+void lk_agb_ereader_sio_stop(void);
+void lk_agb_ereader_sio_write_bit(u8 bit);
+void lk_agb_ereader_sio_write_byte(u8 value);
+void lk_agb_ereader_sensor_write(u8 reg, u8 value);
+void lk_agb_ereader_sensor_read(u8 reg, u8* output, u8 count);
+void lk_agb_ereader_init(const u8* settings);
+void lk_agb_ereader_shutdown(void);
+void lk_agb_ereader_clock_toggle(u32 count);
+void lk_agb_ereader_sensor_init(u8 brightness, u8 vertical, bool calibrating);
+void lk_agb_ereader_apply_thresholds(const u8* thresholds);
+u32 lk_agb_ereader_measure_brightness(u8 brightness, u16* left, u16* right);
+u8 lk_agb_ereader_read_statistic(u32 address);
+
+static const __lk_fwconst u32 lk_crc32_table[] = {
 	0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
 	0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988, 0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91,
 	0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE, 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
@@ -291,7 +338,7 @@ static const u32 crc32_table[] = {
 	0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6, 0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF,
 	0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94, 0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
 };
-static const u16 agb_bootup_table[] = {
+static const __lk_fwconst u16 lk_agb_bootup_table[] = {
 	0x479B, 0x7426, 0x11BC, 0x6D4F, 0x11BD, 0x32F1, 0x7FD9, 0x2CE7,
 	0x5DA5, 0x11BD, 0x4610, 0x5DA4, 0x4E90, 0x6173, 0x2A84, 0x4E91,
 	0x106A, 0x75FE, 0x29C8, 0x7839, 0x420E, 0x5D1B, 0x7838, 0x12A8,
@@ -306,17 +353,51 @@ static const u16 agb_bootup_table[] = {
 	0x6AD8, 0x475B, 0x5199, 0x3264, 0x7B41, 0x49EF, 0x5198, 0x1CD7
 };
 
-#define AGB_GPIO_REG_DAT 0xC4 >> 1
-#define AGB_GPIO_REG_CNT 0xC6 >> 1
-#define AGB_GPIO_REG_RE 0xC8 >> 1
-#define AGB_GPIO_RTC_RESET 0x60
-#define AGB_GPIO_RTC_WRITE_STATUS 0x62
-#define AGB_GPIO_RTC_READ_STATUS 0x63
-#define AGB_GPIO_RTC_WRITE_DATE 0x64
-#define AGB_GPIO_RTC_READ_DATE 0x65
-#define AGB_GPIO_RTC_WRITE_TIME 0x66
-#define AGB_GPIO_RTC_READ_TIME 0x67
-#define AGB_GPIO_RTC_WRITE_ALARM 0x68
-#define AGB_GPIO_RTC_READ_ALARM 0x69
+#define AGB_GPIO_REG_DAT			0xC4 >> 1
+#define AGB_GPIO_REG_CNT			0xC6 >> 1
+#define AGB_GPIO_REG_RE				0xC8 >> 1
+#define AGB_GPIO_RTC_RESET			0x60
+#define AGB_GPIO_RTC_WRITE_STATUS	0x62
+#define AGB_GPIO_RTC_READ_STATUS	0x63
+#define AGB_GPIO_RTC_WRITE_DATE		0x64
+#define AGB_GPIO_RTC_READ_DATE		0x65
+#define AGB_GPIO_RTC_WRITE_TIME		0x66
+#define AGB_GPIO_RTC_READ_TIME		0x67
+#define AGB_GPIO_RTC_WRITE_ALARM	0x68
+#define AGB_GPIO_RTC_READ_ALARM		0x69
+
+// e-Reader registers, control bits, and transfer sizes.
+#define AGB_EREADER_REG_RESET					0xFD0000
+#define AGB_EREADER_REG_LINE_DATA				0xFE0000
+#define AGB_EREADER_REG_MAXIMA					0xFE0014
+#define AGB_EREADER_REG_DARK_LEVEL				0xFE0044
+#define AGB_EREADER_REG_THRESHOLDS				0xFF80
+#define AGB_EREADER_REG_CONTROL					0xFFB0
+#define AGB_EREADER_REG_STATUS					0xFFB1
+#define AGB_EREADER_REG_PWM_LOW					0xFFB2
+#define AGB_EREADER_REG_PWM_HIGH				0xFFB3
+#define AGB_EREADER_CTRL_SIO_DATA				0x01
+#define AGB_EREADER_CTRL_SIO_CLOCK				0x02
+#define AGB_EREADER_CTRL_SIO_OUTPUT				0x04
+#define AGB_EREADER_CTRL_LIGHT					0x08
+#define AGB_EREADER_CTRL_SCAN					0x10
+#define AGB_EREADER_CTRL_PHI					0x20
+#define AGB_EREADER_CTRL_POWER					0x40
+#define AGB_EREADER_CTRL_SIO_IDLE				(AGB_EREADER_CTRL_SIO_DATA | AGB_EREADER_CTRL_SIO_CLOCK | AGB_EREADER_CTRL_SIO_OUTPUT)
+#define AGB_EREADER_STATUS_LINE_READY			0x02
+#define AGB_EREADER_STATUS_LINE_ACK				0x20
+#define AGB_EREADER_SENSOR_WRITE_ADDRESS		0x22
+#define AGB_EREADER_SENSOR_READ_ADDRESS			0x23
+#define AGB_EREADER_SENSOR_REG_VERTICAL_HIGH	0x10
+#define AGB_EREADER_SENSOR_REG_VERTICAL_LOW		0x11
+#define AGB_EREADER_SENSOR_REG_BRIGHTNESS		0x30
+#define AGB_EREADER_SENSOR_REG_MEASUREMENTS		0x57
+#define AGB_EREADER_THRESHOLD_COUNT				48
+#define AGB_EREADER_LINE_BYTES					40
+#define AGB_EREADER_FRAME_LINES					246
+#define AGB_EREADER_SETTINGS_THRESHOLD_OFFSET	4
+#define AGB_EREADER_SETTINGS_SIZE				(AGB_EREADER_SETTINGS_THRESHOLD_OFFSET + AGB_EREADER_THRESHOLD_COUNT)
+#define AGB_EREADER_PACKET_HEADER_SIZE			2
+#define AGB_EREADER_FRAME_METADATA_SIZE			(AGB_EREADER_THRESHOLD_COUNT + 10)
 
 #endif

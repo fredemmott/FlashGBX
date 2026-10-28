@@ -25,6 +25,8 @@
 #define LK_BOOTLOADER_RESET_SUPPORT			false
 #define LK_CART_PRESENCE_SWITCH_SUPPORT			true
 #define LK_CART_MODE_SWITCH_SUPPORT			false
+#define LK_DEVICE_SERIAL_SIZE				0
+#define LK_GET_DEVICE_SERIAL(data)			((void)(data))
 
 #define LK_ASYNC					1
 #if (!LK_ASYNC)
@@ -114,6 +116,7 @@ void LK2MC_SET_PIN(uint8_t pin, uint8_t high);
 #define PIN_AUDIO_L()							LK2MC_SET_PIN(PIN_AUDIO, 0)
 #define PIN_CLK_H()							LK2MC_SET_PIN(PIN_CLK, 1)
 #define PIN_CLK_L()							LK2MC_SET_PIN(PIN_CLK, 0)
+#define PIN_CLK_TOGGLE(num, freq_mhz)		{ for (u32 i = 0; i < num; i++) { PIN_CLK_H(); PIN_CLK_L(); } }
 void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
 #define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)

@@ -1,13 +1,13 @@
 /*
-	LK Firmware version L15
+	LK Firmware version L16
 	Author: Lesserkuma (github.com/Lesserkuma)
-	Last Modified: 2026-05-25T01:55:45+02:00
+	Last Modified: 2026-10-20T23:17:31+02:00
 */
 
 #include "LK.h"
 
 // *** GLOBAL VARIABLES *** //
-u32 lk_runtime = 0;
+volatile u32 lk_runtime = 0;
 u32 _lk_var32[LK_NUM_OF_VARIABLES_32BIT];
 u16 _lk_var16[LK_NUM_OF_VARIABLES_16BIT];
 u8 _lk_var8[LK_NUM_OF_VARIABLES_8BIT];
@@ -23,6 +23,7 @@ u32 time_start = 0;
 bool auto_off_timer_suspended = false;
 bool activity_done = false;
 u32 activity_last_run = 0;
+struct lk_ereader_state _lk_ereader;
 
 // This function should be called in the main loop when data is received.
 void lk_loop(u8 command) {
@@ -42,7 +43,17 @@ void lk_loop(u8 command) {
 				lk_conn_send_u8(sizeof(LK_DEVICE_NAME));
 				lk_conn_send((u8*)LK_DEVICE_NAME, sizeof(LK_DEVICE_NAME));
 				lk_conn_send_u8(LK_POWER_CONTROL_SUPPORT | (LK_CART_PRESENCE_SWITCH_SUPPORT << 1) | (LK_CART_MODE_SWITCH_SUPPORT << 2));
-				lk_conn_send_u8(LK_BOOTLOADER_RESET_SUPPORT);
+				lk_conn_send_u8(LK_BOOTLOADER_RESET_SUPPORT | ((LK_DEVICE_SERIAL_SIZE != 0) << 1));
+			}
+			break;
+
+		case LK_CMD_GET_DEVICE_SERIAL:
+			{
+				// Response: byte count followed by raw serial bytes in device memory order.
+				u8 length = LK_DEVICE_SERIAL_SIZE;
+				if (length != 0) LK_GET_DEVICE_SERIAL(data_buffer);
+				lk_conn_send_u8(length);
+				if (length != 0) lk_conn_send(data_buffer, length);
 			}
 			break;
 
@@ -341,17 +352,12 @@ void lk_loop(u8 command) {
 			break;
 
 		case LK_CLK_TOGGLE:
-			// args: number of toggles
+			// args: pulse count (u32), frequency in MHz (u8; 0 = maximum)
 			{
 				u32 num = lk_conn_recv_u32();
+				u8 freq_mhz = lk_conn_recv_u8();
 				ACTIVITY_LED_ON();
-				while (num > 0) {
-					PIN_CLK_L();
-					_delay_500ns();
-					PIN_CLK_H();
-					_delay_500ns();
-					num--;
-				}
+				lk_clock_toggle(num, freq_mhz);
 				lk_conn_send_u8(LK_STATUS_OK);
 			}
 			break;
@@ -522,7 +528,7 @@ void lk_loop(u8 command) {
 				lk_conn_recv(data_buffer, _lk_var16[LK_VAR16_TRANSFER_SIZE]);
 				ACTIVITY_LED_ON();
 				lk_agb_cart_write_flash(flash_type);
-				lk_conn_send_u8(LK_STATUS_OK);
+				lk_conn_send_u8(_timeout_check() ? LK_STATUS_ERROR : LK_STATUS_OK);
 			}
 			break;
 
@@ -548,6 +554,30 @@ void lk_loop(u8 command) {
 				ACTIVITY_LED_ON();
 				lk_agb_read_gpio_rtc();
 				lk_conn_send(data_buffer, 8);
+			}
+			break;
+
+		case LK_CMD_AGB_EREADER_SCAN:
+			// args: brightness, vertical offset, PWM (big endian), 48 thresholds, threshold tag (4 byte)
+			// note: client must set transfer size variable beforehand (defines the maximum packet size)
+			{
+				lk_conn_recv(data_buffer, AGB_EREADER_SETTINGS_SIZE);
+				u32 threshold_tag = lk_conn_recv_u32();
+				ACTIVITY_LED_ON();
+				lk_agb_ereader_scan(data_buffer, threshold_tag);
+			}
+			break;
+
+		case LK_CMD_AGB_EREADER_CALIBRATE:
+			// args: factory brightness, vertical offset
+			{
+				u8 brightness = lk_conn_recv_u8();
+				u8 vertical = lk_conn_recv_u8();
+				u8 calibrated;
+				ACTIVITY_LED_ON();
+				u8 status = lk_agb_ereader_calibrate(brightness, vertical, &calibrated);
+				lk_conn_send_u8(status);
+				if (status == LK_STATUS_OK) lk_conn_send_u8(calibrated);
 			}
 			break;
 
@@ -753,10 +783,95 @@ void lk_loop(u8 command) {
 			}
 			break;
 
-		case LK_CMD_SET_PIN:
-			// args: pin (1 byte), high/low (1 byte)
+		case LK_CMD_CART_UNLOCK_SEQUENCE:
+			// args: number of commands (1 byte), commands (address/flags (4 byte), value/read count (2 byte))
+			// address: bit 31 = write, bits 30-29 = read method; read count: bit 15 = repeat at same address
+			// AGB: ROM halfword addresses, SRAM/Flash byte addresses at 0x0E000000-0x0FFFFFFF
 			{
-				// TODO: change to u32 (1 bit per pin)
+				u8 mode = _lk_var8[LK_VAR8_CART_MODE];
+				u8 num = lk_conn_recv_u8();
+				lk_conn_recv(data_buffer, num * 6);
+				ACTIVITY_LED_ON();
+				for (u8 x = 0; x < num; x++) {
+					u8 *command = &data_buffer[x * 6];
+					u32 addr = ((u32)command[0] << 24) | ((u32)command[1] << 16) | ((u32)command[2] << 8) | command[3];
+					u16 data = ((u16)command[4] << 8) | command[5];
+					u8 write = addr >> 31;
+					u8 read_method = (addr >> 29) & 3;
+					addr &= 0x1FFFFFFF;
+					u8 sram = mode == LK_MODE_AGB && addr >= 0x0E000000 && addr < 0x10000000;
+					if (sram) lk_set_mode(LK_MODE_DMG);
+					if (write) {
+						if (sram) {
+							lk_agb_cart_write_sram_byte(addr, data);
+						} else if (mode == LK_MODE_DMG) {
+							lk_dmg_cart_write_byte(addr, data);
+						} else {
+							lk_agb_cart_write_short(addr, data);
+						}
+					} else {
+						u8 repeated = data >> 15;
+						u16 count = data & 0x7FFF;
+						if (mode == LK_MODE_DMG) {
+							PIN_CLK_L();
+						} else if (!sram && !repeated) {
+							count >>= 1;
+						}
+						if (mode == LK_MODE_DMG && (read_method == LK_DMG_READ_METHOD_PULSE_A15 || read_method == LK_DMG_READ_METHOD_PULSE_A15_SLOW)) {
+							RAW_DMG_ADDR_DIR_OUT();
+							RAW_DMG_DATA_DIR_IN();
+							PIN_RD_L();
+							for (u16 y = 0; y < count; y++) {
+								RAW_DMG_ADDR_SET(addr);
+								if (read_method == LK_DMG_READ_METHOD_PULSE_A15_SLOW) {
+									_delay_dmg_slow_access();
+								} else {
+									_delay_400ns();
+								}
+								(void)(RAW_DMG_DATA_GET());
+								PIN_ADDR_H(15);
+								if (!repeated) addr++;
+							}
+							PIN_RD_H();
+						} else if (mode != LK_MODE_DMG && !sram && read_method != LK_AGB_READ_METHOD_SINGLE) {
+							while (count > 0) {
+								u16 chunk_len = count;
+								if (repeated) chunk_len = 1;
+								else if (read_method == LK_AGB_READ_METHOD_MEMCPY && chunk_len > 2) chunk_len = 2;
+								RAW_AGB_ADDR_DIR_OUT();
+								RAW_AGB_ADDR_SET(addr);
+								PIN_CS_L();
+								RAW_AGB_DATA_SET(0);
+								RAW_AGB_DATA_DIR_IN();
+								_delay_500ns();
+								for (u16 y = 0; y < chunk_len; y++) {
+									PIN_RD_L();
+									_delay_300ns();
+									(void)(RAW_AGB_DATA_GET());
+									PIN_RD_H();
+								}
+								PIN_CS_H();
+								if (!repeated) addr += chunk_len;
+								count -= chunk_len;
+							}
+						} else {
+							for (u16 y = 0; y < count; y++) {
+								if (sram) lk_agb_cart_read_sram_byte(addr);
+								else if (mode == LK_MODE_DMG) lk_dmg_cart_read_byte(addr);
+								else lk_agb_cart_read_short(addr);
+								if (!repeated) addr++;
+							}
+						}
+					}
+					if (sram) lk_set_mode(LK_MODE_AGB);
+				}
+				lk_conn_send_u8(LK_STATUS_OK);
+			}
+			break;
+
+		case LK_CMD_SET_PIN:
+			// args: pins (4 byte), high/low (1 byte)
+			{
 				u32 pins = lk_conn_recv_u32();
 				u8 set = lk_conn_recv_u8(); // 0=set low, 1=set high
 				if ((pins >> 0) & 1) {
@@ -1016,6 +1131,10 @@ void lk_conn_send_u32(u32 data) {
 	CONN_SEND_BYTE((data >> 16) & 0xFF);
 	CONN_SEND_BYTE((data >> 8) & 0xFF);
 	CONN_SEND_BYTE(data & 0xFF);
+}
+
+void lk_clock_toggle(u32 count, u8 freq_mhz) {
+	PIN_CLK_TOGGLE(count, freq_mhz);
 }
 
 void lk_set_mode(u8 mode) {
@@ -1357,11 +1476,7 @@ void lk_dmg_flash_write_byte(u32 address, u16 value) {
 
 	_delay_200ns(); // thanks simonK
 
-	if (_lk_var8[LK_VAR8_FLASH_WE_PIN] == LK_FLASH_WE_PIN_WR) {
-		PIN_WR_L();
-		_delay_400ns();
-		PIN_WR_H();
-	} else if (_lk_var8[LK_VAR8_FLASH_WE_PIN] == LK_FLASH_WE_PIN_AUDIO) {
+	if (_lk_var8[LK_VAR8_FLASH_WE_PIN] == LK_FLASH_WE_PIN_AUDIO) {
 		PIN_AUDIO_L();
 		_delay_400ns();
 		PIN_AUDIO_H();
@@ -1371,6 +1486,10 @@ void lk_dmg_flash_write_byte(u32 address, u16 value) {
 		_delay_400ns();
 		PIN_WR_H();
 		PIN_CS2_H();
+	} else {
+		PIN_WR_L();
+		_delay_400ns();
+		PIN_WR_H();
 	}
 }
 
@@ -1675,6 +1794,7 @@ u16 lk_agb_cart_read_short(u32 address) {
 	PIN_CS_L();
 	RAW_AGB_DATA_SET(0); // Set floating lines to 0 instead of mirroring the address
 	RAW_AGB_DATA_DIR_IN();
+	_delay_500ns(); // address-latch settle M1, thanks Daemon125
 	PIN_RD_L();
 	_delay_100ns();
 	u16 data = RAW_AGB_DATA_GET();
@@ -1694,6 +1814,7 @@ void lk_agb_cart_read_data(void) {
 				PIN_CS_L();
 				RAW_AGB_DATA_SET(0); // set floating lines to 0 instead of mirroring the address
 				RAW_AGB_DATA_DIR_IN();
+				_delay_500ns(); // address-latch settle M1, thanks Daemon125
 				PIN_RD_L();
 				_delay_300ns();
 				((u16*)data_buffer)[x] = RAW_AGB_DATA_GET();
@@ -1711,6 +1832,7 @@ void lk_agb_cart_read_data(void) {
 			PIN_CS_L();
 			RAW_AGB_DATA_SET(0); // set floating areas to 0 instead of mirroring the address
 			RAW_AGB_DATA_DIR_IN();
+			_delay_500ns(); // address-latch settle M1, thanks Daemon125
 			for (u32 x = 0; x < chunk_len >> 1; x++) {
 				PIN_RD_L();
 				_delay_300ns();
@@ -1725,6 +1847,7 @@ void lk_agb_cart_read_data(void) {
 			}
 		}
 		
+		RAW_AGB_DATA_DIR_OUT();
 		lk_conn_send(data_buffer, chunk_len);
 		left -= chunk_len;
 	}
@@ -1743,21 +1866,21 @@ void lk_agb_cart_write_short(u32 address, u16 value) {
 
 u8 lk_agb_cart_read_sram_byte(u16 address) {
 	PIN_RD_H(); // needed for iG 1M flash save type detection
-	RAW_DMG_ADDR_DIR_OUT();
-	RAW_DMG_ADDR_SET(address);
+	RAW_AGB_SAVE_ADDR_DIR_OUT();
+	RAW_AGB_SAVE_ADDR_SET(address);
 	PIN_CS2_L();
 	PIN_RD_L();
 	_delay_400ns(); // FRAM needs this
-	RAW_DMG_DATA_DIR_IN();
-	u8 data = RAW_DMG_DATA_GET();
+	RAW_AGB_SAVE_DATA_DIR_IN();
+	u8 data = RAW_AGB_SAVE_DATA_GET();
 	PIN_RD_H();
 	PIN_CS2_H();
 	return data;
 }
 void lk_agb_cart_write_sram_byte(u16 address, u8 value) {
-	RAW_DMG_DATA_DIR_OUT();
-	RAW_DMG_ADDR_SET(address);
-	RAW_DMG_DATA_SET(value);
+	RAW_AGB_SAVE_DATA_DIR_OUT();
+	RAW_AGB_SAVE_ADDR_SET(address);
+	RAW_AGB_SAVE_DATA_SET(value);
 	PIN_CS2_L();
 	PIN_WR_L();
 	_delay_400ns(); // FRAM needs this
@@ -1809,10 +1932,10 @@ void lk_agb_cart_write_eeprom(u8 eeprom_type) {
 }
 
 void lk_agb_cart_write_flash_byte(u32 address, u16 value) {
-	RAW_DMG_ADDR_DIR_OUT();
-	RAW_DMG_ADDR_SET(address);
-	RAW_DMG_DATA_DIR_OUT();
-	RAW_DMG_DATA_SET(value);
+	RAW_AGB_SAVE_ADDR_DIR_OUT();
+	RAW_AGB_SAVE_ADDR_SET(address);
+	RAW_AGB_SAVE_DATA_DIR_OUT();
+	RAW_AGB_SAVE_DATA_SET(value);
 	PIN_CS2_L();
 	PIN_WR_L();
 	_delay_500ns();
@@ -1828,9 +1951,11 @@ void lk_agb_cart_write_flash(u8 flash_type) {
 	lk_set_mode(LK_MODE_DMG);
 	if (flash_type == LK_TYPE_FLASH_NON_ATMEL) {
 		for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x++) {
+			u16 _lk_wr_addr = (u16)_lk_var32[LK_VAR32_ADDRESS];
 			lk_agb_cart_write_flash_program_sequence();
 			lk_agb_cart_write_flash_byte(_lk_var32[LK_VAR32_ADDRESS]++, data_buffer[x]);
-			_delay_us(20);
+			lk_agb_verify_saveflash_data(_lk_wr_addr, data_buffer[x]);
+			if (_timeout_check()) break;
 		}
 	} else {
 		for (u32 x = 0; x < _lk_var16[LK_VAR16_TRANSFER_SIZE]; x += 128) {
@@ -1838,8 +1963,9 @@ void lk_agb_cart_write_flash(u8 flash_type) {
 			for (u8 y = 0; y < 128; y++) {
 				lk_agb_cart_write_flash_byte((u16)(_lk_var32[LK_VAR32_ADDRESS] << 7) | (u16)y, data_buffer[x + y]);
 			}
+			lk_agb_verify_saveflash_data((u16)(_lk_var32[LK_VAR32_ADDRESS] << 7) | (u16)127, data_buffer[x + 127]);
+			if (_timeout_check()) break;
 			_lk_var32[LK_VAR32_ADDRESS]++;
-			_delay_ms(10);
 		}
 	}
 	lk_set_mode(LK_MODE_AGB);
@@ -1862,6 +1988,7 @@ void lk_agb_cart_read_data_3d_memory(void) {
 	PIN_CS_L();
 	RAW_AGB_ADDR_SET(0);
 	RAW_AGB_DATA_DIR_IN();
+	_delay_500ns(); // address-latch settle M1, thanks Daemon125
 
 	u8 client_ack = LK_CMD_AGB_CART_READ_3D_MEMORY;
 
@@ -1878,6 +2005,32 @@ void lk_agb_cart_read_data_3d_memory(void) {
 	}
 
 	_lk_var32[LK_VAR32_ADDRESS] += (_lk_var16[LK_VAR16_BUFFER_SIZE] >> 1);
+}
+
+void lk_agb_verify_saveflash_data(u16 addr, u8 comp) {
+	_timeout_init();
+	u8 data;
+	PIN_RD_H();
+	RAW_AGB_SAVE_ADDR_DIR_OUT();
+	RAW_AGB_SAVE_ADDR_SET(addr);
+	RAW_AGB_SAVE_DATA_DIR_IN();
+	while (1) {
+		PIN_CS2_L();
+		PIN_RD_L();
+		_delay_400ns();
+		data = RAW_AGB_SAVE_DATA_GET();
+		PIN_RD_H();
+		PIN_CS2_H();
+		if (data == comp) {
+			_timeout_reset();
+			break;
+		}
+		if (_timeout_check()) {
+			dprint("lk_agb_verify_saveflash_data(addr=%x, comp=%x): Timed out with %x!\r\n", addr, comp, data);
+			_lk_var16[LK_VAR16_STATUS_REGISTER] = data;
+			break;
+		}
+	}
 }
 
 void lk_agb_verify_data(u32 addr, u16 comp) {
@@ -2221,8 +2374,7 @@ void lk_agb_flash2advance_buffered(u16 transfer_size, u16 buffer_offset, u32 sec
 	lk_agb_cart_write_short(sector_address + 1, _lk_flashcmd_data[4]);		// SA+1=FF
 }
 
-// This function unlocks some cartridges like the DACS one, and is
-// also needed for Sintax bootlegs to respond with the ROM header.
+// Match the BIOS byte-read sequence to unlock DACS and Sintax cartridges.
 void lk_agb_bootup_sequence(void) { // Thanks TachY3n
 	u16 x, y, z, value = 0;
 	u32 b, hash = 0;
@@ -2234,22 +2386,23 @@ void lk_agb_bootup_sequence(void) { // Thanks TachY3n
 	PIN_RD_H();
 	PIN_WR_H();
 
-	lk_agb_cart_read_short(0x5A);
-	lk_agb_cart_read_short(0xFFFFF0);
-	lk_agb_cart_read_short(0xFFFFF1);
-	lk_agb_cart_read_short(0xFFFFF2);
-	lk_agb_cart_read_short(0xFFFFF3);
-	lk_agb_cart_read_short(0xFFFFF4);
-	lk_agb_cart_read_short(0xFFFFF5);
-	lk_agb_cart_read_short(0xFFFFF6);
-	lk_agb_cart_read_short(0xFFFFF7);
-	lk_agb_cart_read_short(0xFFFFF8);
-	lk_agb_cart_read_short(0xFFFFF9);
+	value = lk_agb_cart_read_short(0x5A);
+	value = (value & 0x80) ? 0 : 0xF000;
+	lk_agb_cart_read_short(0xFF0FF0 + value);
+	lk_agb_cart_read_short(0xFF0FF1 + value);
+	lk_agb_cart_read_short(0xFF0FF2 + value);
+	lk_agb_cart_read_short(0xFF0FF3 + value);
+	lk_agb_cart_read_short(0xFF0FF4 + value);
+	lk_agb_cart_read_short(0xFF0FF5 + value);
+	lk_agb_cart_read_short(0xFF0FF6 + value);
+	lk_agb_cart_read_short(0xFF0FF7 + value);
+	lk_agb_cart_read_short(0xFF0FF8 + value);
+	lk_agb_cart_read_short(0xFF0FF9 + value);
 	
 	for (x = 0x9C; x < 0xB8; x += 2) {
-		value = lk_agb_cart_read_short(x >> 1);
 		for (u8 y = 0; y < 2; y++) {
 			if ((x == 0x9C) && (y == 0)) continue;
+			value = lk_agb_cart_read_short(x >> 1);
 			b = (value >> (y * 8)) & 0xFF;
 			hash = (hash >> 3) | (hash << 29);
 			hash = hash ^ b;
@@ -2271,7 +2424,7 @@ void lk_agb_bootup_sequence(void) { // Thanks TachY3n
 	}
 
 	for (y = 0; y < 6; ++y) {
-		u32 address = agb_bootup_table[tindex++];
+		u32 address = lk_agb_bootup_table[tindex++];
 		lk_agb_cart_read_short(address);
 		for (z = 10 * y; z < 10 * (y + 1); ++z) {
 			lk_agb_cart_read_short(x + z);
@@ -2280,9 +2433,6 @@ void lk_agb_bootup_sequence(void) { // Thanks TachY3n
 	for (z = 10 * y; z < 10 * (y + 1); ++z) {
 		lk_agb_cart_read_short(x + z);
 	}
-
-	lk_agb_cart_read_short(0);
-	lk_agb_cart_read_short(1);
 }
 
 void lk_agb_flash_fujitsu_fastmode(void) {
@@ -2361,19 +2511,20 @@ u32 lk_dmg_agb_calc_crc32(u32 length) {
 		PIN_RD_H();
 		LK_ASYNC_FLUSH(NULL, 0);
 		for (u32 x = 0; x < length; x++) {
-			checksum = crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
+			checksum = lk_crc32_table[(checksum ^ data_buffer[x]) & 0xFF] ^ (checksum >> 8);
 		}
 	} else { // AGB mode
 		RAW_AGB_ADDR_DIR_OUT();
 		RAW_AGB_ADDR_SET(_lk_var32[LK_VAR32_ADDRESS]);
 		PIN_CS_L();
 		RAW_AGB_DATA_DIR_IN();
+		_delay_500ns(); // address-latch settle M1, thanks Daemon125
 		for (u32 x = 0; x < length >> 1; x++) {
 			PIN_RD_L();
 			_delay_100ns();
 			u16 temp = RAW_AGB_DATA_GET();
-			checksum = crc32_table[(checksum ^ (temp & 0xFF)) & 0xFF] ^ (checksum >> 8);
-			checksum = crc32_table[(checksum ^ (temp >> 8)) & 0xFF] ^ (checksum >> 8);
+			checksum = lk_crc32_table[(checksum ^ (temp & 0xFF)) & 0xFF] ^ (checksum >> 8);
+			checksum = lk_crc32_table[(checksum ^ (temp >> 8)) & 0xFF] ^ (checksum >> 8);
 			PIN_RD_H();
 		}
 		PIN_CS_H();
@@ -2434,6 +2585,471 @@ void lk_agb_read_gpio_rtc(void) {
 	lk_agb_cart_write_short(AGB_GPIO_REG_DAT, 1);
 	lk_agb_cart_write_short(AGB_GPIO_REG_DAT, 1);
 	lk_agb_cart_write_short(AGB_GPIO_REG_RE, 0); // Disable RTC mapping
+}
+
+void lk_agb_ereader_idle(void) {
+	PIN_CS_H();
+	PIN_CS2_H();
+	PIN_RD_H();
+	PIN_WR_H();
+}
+void lk_agb_ereader_clock_toggle(u32 count) {
+	_lk_ereader.clock_count += count;
+	lk_clock_toggle(count, 0);
+}
+u8 lk_agb_ereader_read(u16 address) {
+	lk_agb_ereader_idle();
+	RAW_AGB_SAVE_DATA_DIR_IN();
+	return lk_agb_cart_read_sram_byte(address);
+}
+void lk_agb_ereader_write(u16 address, u8 value) {
+	lk_agb_ereader_idle();
+	if (address == AGB_EREADER_REG_CONTROL) _lk_ereader.control = value;
+	RAW_AGB_SAVE_DATA_DIR_IN();
+	lk_agb_ereader_clock_toggle(4);
+	RAW_AGB_SAVE_ADDR_DIR_OUT();
+	RAW_AGB_SAVE_DATA_DIR_OUT();
+	RAW_AGB_SAVE_ADDR_SET(address);
+	RAW_AGB_SAVE_DATA_SET(value);
+	PIN_CS2_L();
+	PIN_WR_L();
+	_delay_400ns();
+	lk_agb_ereader_clock_toggle(4);
+	PIN_WR_H();
+	lk_agb_ereader_clock_toggle(4);
+	PIN_CS2_H();
+	lk_agb_ereader_clock_toggle(4);
+}
+void lk_agb_ereader_read_line(u8* output) {
+	lk_agb_ereader_idle();
+	RAW_AGB_ADDR_DIR_IN();
+	lk_agb_ereader_clock_toggle(4);
+	RAW_AGB_ADDR_DIR_OUT();
+	RAW_AGB_ADDR_SET(AGB_EREADER_REG_LINE_DATA);
+	_delay_500ns();
+	PIN_CS_L();
+	_delay_500ns();
+	RAW_AGB_DATA_SET(0);
+	RAW_AGB_DATA_DIR_IN();
+	lk_agb_ereader_clock_toggle(4);
+	for (u8 x = 0; x < AGB_EREADER_LINE_BYTES / 2; x++) {
+		PIN_RD_L();
+		lk_agb_ereader_clock_toggle(4);
+		u16 value = RAW_AGB_DATA_GET();
+		PIN_RD_H();
+		lk_agb_ereader_clock_toggle(4);
+		output[x * 2] = value;
+		output[1 + x * 2] = value >> 8;
+	}
+	PIN_CS_H();
+	lk_agb_ereader_clock_toggle(4);
+}
+void lk_agb_ereader_control_set(u8 set, u8 clear) {
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, (_lk_ereader.control | set) & ~clear);
+}
+void lk_agb_ereader_sio_start(void) {
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_DATA, 0);
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_OUTPUT, 0);
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_CLOCK, 0);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_DATA);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_CLOCK);
+}
+void lk_agb_ereader_sio_stop(void) {
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_OUTPUT, 0);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_DATA);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_CLOCK, 0);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_DATA, 0);
+}
+void lk_agb_ereader_sio_write_bit(u8 bit) {
+	lk_agb_ereader_control_set(bit ? AGB_EREADER_CTRL_SIO_DATA : 0, bit ? 0 : AGB_EREADER_CTRL_SIO_DATA);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_CLOCK, 0);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_CLOCK);
+}
+// MSB-first serial byte write and acknowledgement read.
+void lk_agb_ereader_sio_write_byte(u8 value) {
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_OUTPUT, 0);
+	for (u8 mask = 128; mask; mask >>= 1) {
+		lk_agb_ereader_sio_write_bit((u8)(value & mask));
+	}
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_OUTPUT);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_CLOCK, 0);
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	(void)lk_agb_ereader_read(AGB_EREADER_REG_CONTROL);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_CLOCK);
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_OUTPUT, 0);
+}
+void lk_agb_ereader_sensor_write(u8 reg, u8 value) {
+	lk_agb_ereader_sio_start();
+	lk_agb_ereader_sio_write_byte(AGB_EREADER_SENSOR_WRITE_ADDRESS);
+	lk_agb_ereader_sio_write_byte(reg);
+	lk_agb_ereader_sio_write_byte(value);
+	lk_agb_ereader_sio_stop();
+}
+void lk_agb_ereader_sensor_read(u8 reg, u8* output, u8 count) {
+	lk_agb_ereader_sio_start();
+	lk_agb_ereader_sio_write_byte(AGB_EREADER_SENSOR_WRITE_ADDRESS);
+	lk_agb_ereader_sio_write_byte(reg);
+	lk_agb_ereader_sio_start();
+	lk_agb_ereader_sio_write_byte(AGB_EREADER_SENSOR_READ_ADDRESS);
+	for (u8 index = 0; index < count; index++) {
+		u8 value = 0;
+		lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_OUTPUT);
+		for (u8 bit = 0; bit < 8; bit++) {
+			value <<= 1;
+			// lk_agb_ereader_clock_toggle(64);
+			_delay_400ns();
+			lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_CLOCK, 0);
+			// lk_agb_ereader_clock_toggle(64);
+			_delay_400ns();
+			value |= lk_agb_ereader_read(AGB_EREADER_REG_CONTROL) & AGB_EREADER_CTRL_SIO_DATA;
+			lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_CLOCK);
+		}
+		lk_agb_ereader_control_set(value & AGB_EREADER_CTRL_SIO_DATA, value & AGB_EREADER_CTRL_SIO_DATA ? 0 : AGB_EREADER_CTRL_SIO_DATA);
+		lk_agb_ereader_control_set(AGB_EREADER_CTRL_SIO_OUTPUT, 0);
+		output[index] = value;
+		lk_agb_ereader_sio_write_bit(index + 1 == count);
+	}
+	lk_agb_ereader_sio_stop();
+}
+// Reset, enable power and clocks, then initialize the sensor registers.
+void lk_agb_ereader_sensor_init(u8 brightness, u8 vertical, bool calibrating) {
+	// lk_agb_ereader_clock_toggle(64);
+	_delay_400ns();
+	lk_agb_ereader_idle();
+	lk_agb_cart_write_short(AGB_EREADER_REG_RESET, 6);
+	_delay_ms(10);
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, AGB_EREADER_CTRL_POWER);
+	lk_agb_ereader_idle();
+	lk_agb_cart_write_short(AGB_EREADER_REG_RESET, 4);
+	lk_agb_ereader_write(AGB_EREADER_REG_STATUS, AGB_EREADER_STATUS_LINE_ACK);
+	_delay_ms(40);
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, AGB_EREADER_CTRL_POWER | AGB_EREADER_CTRL_SIO_DATA | AGB_EREADER_CTRL_SIO_OUTPUT);
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, AGB_EREADER_CTRL_POWER | AGB_EREADER_CTRL_SIO_IDLE);
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, AGB_EREADER_CTRL_POWER | AGB_EREADER_CTRL_SIO_IDLE | AGB_EREADER_CTRL_PHI);
+	lk_agb_ereader_clock_toggle(1024);
+	if (calibrating) {
+		lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_LIGHT | AGB_EREADER_CTRL_SCAN);
+		lk_agb_ereader_write(AGB_EREADER_REG_PWM_LOW, 0);
+		lk_agb_ereader_write(AGB_EREADER_REG_PWM_HIGH, 0);
+	}
+
+	// Use base/calibration values with scan-specific overrides.
+	const u8 registers[][2] = {
+		{ 0x01, 0x05 }, { 0x02, 0x0E }, { 0x12, 0x00 }, { 0x13, 0x30 },
+		{ 0x14, 0x00 }, { 0x15, 0xF6 }, { 0x16, 0x01 }, { 0x17, 0x40 },
+		{ 0x20, 0x00 }, { 0x21, 0xC4 }, { 0x22, 0x04 }, { 0x23, 0x00 },
+		{ 0x25, 0x06 }, { 0x26, 0xE8 }, { 0x27, 0x6C }, { 0x28, 0x00 },
+		{ 0x31, 0x14 }, { 0x32, 0x14 }, { 0x33, 0x14 }, { 0x34, 0x02 }
+	};
+	for (u8 x = 0; x < sizeof(registers) / sizeof(registers[0]); x++) {
+		u8 value = registers[x][1];
+		if (calibrating && registers[x][0] == 0x25) value = 0x04;
+		if (calibrating && registers[x][0] == 0x26) value = 0x58;
+		lk_agb_ereader_sensor_write(registers[x][0], value);
+	}
+	lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_VERTICAL_HIGH, 0);
+	lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_VERTICAL_LOW, vertical);
+	if (!calibrating) {
+		lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_BRIGHTNESS, brightness);
+		_lk_ereader.brightness = brightness;
+		_lk_ereader.vertical = vertical;
+	}
+}
+void lk_agb_ereader_apply_thresholds(const u8* thresholds) {
+	for (u8 x = 0; x < AGB_EREADER_THRESHOLD_COUNT; x++) {
+		lk_agb_ereader_write(AGB_EREADER_REG_THRESHOLDS + x, thresholds[x]);
+	}
+}
+// Configure the sensor and thresholds, then enable scanning and light.
+void lk_agb_ereader_init(const u8* settings) {
+	u16 pwm = ((u16)settings[2] << 8) | settings[3];
+	lk_agb_ereader_sensor_init(settings[0], settings[1], false);
+	lk_agb_ereader_apply_thresholds(settings + AGB_EREADER_SETTINGS_THRESHOLD_OFFSET);
+	lk_agb_ereader_write(AGB_EREADER_REG_PWM_LOW, (u8)pwm);
+	lk_agb_ereader_write(AGB_EREADER_REG_PWM_HIGH, pwm >> 8);
+	_lk_ereader.pwm = pwm;
+	lk_agb_ereader_write(AGB_EREADER_REG_STATUS, AGB_EREADER_STATUS_LINE_ACK);
+	u8 control = AGB_EREADER_CTRL_POWER | AGB_EREADER_CTRL_PHI | AGB_EREADER_CTRL_SCAN | AGB_EREADER_CTRL_SIO_IDLE;
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, control);
+	lk_agb_ereader_write(AGB_EREADER_REG_CONTROL, control | AGB_EREADER_CTRL_LIGHT);
+}
+void lk_agb_ereader_shutdown(void) {
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_LIGHT);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SCAN);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SIO_DATA | AGB_EREADER_CTRL_SIO_CLOCK);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_PHI);
+	lk_agb_ereader_write(AGB_EREADER_REG_PWM_LOW, 0);
+	lk_agb_ereader_write(AGB_EREADER_REG_PWM_HIGH, 0);
+	lk_agb_ereader_write(AGB_EREADER_REG_STATUS, 0);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_POWER);
+}
+u32 lk_agb_ereader_measure_brightness(u8 brightness, u16* left, u16* right) {
+	lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_BRIGHTNESS, brightness);
+	lk_agb_ereader_control_set(AGB_EREADER_CTRL_SCAN, 0);
+	// Logic analyzer shows four clock periods of 184580 each.
+	lk_agb_ereader_clock_toggle(738320);
+	lk_agb_ereader_control_set(0, AGB_EREADER_CTRL_SCAN);
+	lk_agb_ereader_sensor_read(AGB_EREADER_SENSOR_REG_MEASUREMENTS, data_buffer, 4);
+	*left = ((u16)data_buffer[0] << 8) | data_buffer[1];
+	*right = ((u16)data_buffer[2] << 8) | data_buffer[3];
+	return (u32)*left + *right;
+}
+u8 lk_agb_ereader_calibrate(u8 factory_brightness, u8 vertical, u8* calibrated) {
+	// Little-endian brightness sums select the next coarse search step.
+	const u16 thresholds[] = {1, 20, 60, 340, 1300, 3800, 7600, 12700, 19500, 27400};
+	s16 brightness = factory_brightness > 11 ? factory_brightness - 11 : 0;
+	s16 previous_brightness = brightness;
+	s16 step = 0;
+	u32 previous_total = 0xFFFF;
+	u8 directions = 0;
+	bool coarse = true;
+	bool failed = false;
+
+	lk_agb_ereader_sensor_init(0, vertical, true);
+
+	for (u8 attempt = 0; attempt < 7; attempt++) {
+		brightness += step;
+		if (brightness < 0) brightness = 0;
+		if (brightness > 63) brightness = 63;
+
+		u16 left, right;
+		u32 total = lk_agb_ereader_measure_brightness(brightness, &left, &right);
+
+		if (attempt == 0 && left < right) {
+			brightness -= 11;
+			total = previous_total;
+		} else {
+			if (coarse) {
+				if (brightness > 62 && total > 16) {
+					failed = true;
+					break;
+				}
+				if (total >= thresholds[0]) {
+					u8 index = 1;
+					while (index < sizeof(thresholds) / sizeof(thresholds[0]) && total >= thresholds[index]) {
+						index++;
+					}
+					step = index + 1;
+					previous_brightness = brightness;
+					previous_total = total;
+					if (step < 11) coarse = false;
+					continue;
+				}
+				coarse = false;
+			}
+
+			if (!(directions & 4)) {
+				step = left < right ? -2 : 2;
+				directions |= 4;
+			} else {
+				if (total == previous_total) {
+					previous_brightness = (brightness + previous_brightness) / 2;
+					break;
+				}
+
+				u8 direction;
+				if (total < previous_total) {
+					direction = step < 1 ? 1 : 2;
+				} else {
+					brightness = previous_brightness;
+					total = previous_total;
+					direction = step < 1 ? 2 : 1;
+				}
+				directions |= direction;
+				if ((directions & 1) && (directions & 2)) {
+					previous_brightness = brightness;
+					previous_total = total;
+					break;
+				}
+				step = direction == 2 ? 2 : -2;
+			}
+
+			previous_brightness = brightness;
+			previous_total = total;
+			if (brightness + step < 0 || brightness + step > 63) break;
+		}
+
+		previous_total = total;
+	}
+
+	lk_agb_ereader_shutdown();
+	if (failed || previous_total > 16) return LK_STATUS_ERROR;
+	*calibrated = previous_brightness;
+	return LK_STATUS_OK;
+}
+u8 lk_agb_ereader_read_statistic(u32 address) {
+	lk_agb_ereader_idle();
+	RAW_AGB_ADDR_DIR_OUT();
+	RAW_AGB_ADDR_SET(address);
+	lk_agb_ereader_clock_toggle(4);
+	PIN_CS_L();
+	lk_agb_ereader_clock_toggle(4);
+	RAW_AGB_DATA_DIR_IN();
+	PIN_RD_L();
+	lk_agb_ereader_clock_toggle(4);
+	u8 value = (u8)RAW_AGB_DATA_GET();
+	PIN_RD_H();
+	lk_agb_ereader_clock_toggle(4);
+	PIN_CS_H();
+	lk_agb_ereader_clock_toggle(4);
+	return value;
+}
+// Capture 246-line frames with frame-buffer switching and line acknowledgement.
+void lk_agb_ereader_scan(const u8* settings, u32 threshold_tag) {
+	u8 thresholds[2][AGB_EREADER_THRESHOLD_COUNT];
+	u32 threshold_tags[2] = {threshold_tag, threshold_tag};
+	u32 expected = 0;
+	u16 transfer_size = _lk_var16[LK_VAR16_TRANSFER_SIZE];
+	if (transfer_size < AGB_EREADER_PACKET_HEADER_SIZE + AGB_EREADER_FRAME_METADATA_SIZE + AGB_EREADER_LINE_BYTES || transfer_size > sizeof(data_buffer)) {
+		lk_conn_send_u8(LK_STATUS_ERROR);
+		return;
+	}
+	u16 lines_per_packet = (transfer_size - AGB_EREADER_PACKET_HEADER_SIZE - AGB_EREADER_FRAME_METADATA_SIZE) / AGB_EREADER_LINE_BYTES;
+	u8 frame_buffer = 1;
+	bool scanning = true;
+
+	for (u8 i = 0; i < AGB_EREADER_THRESHOLD_COUNT; i++) {
+		thresholds[0][i] = settings[AGB_EREADER_SETTINGS_THRESHOLD_OFFSET + i];
+		thresholds[1][i] = settings[AGB_EREADER_SETTINGS_THRESHOLD_OFFSET + i];
+	}
+	lk_agb_ereader_init(settings);
+	lk_conn_send_u8(LK_STATUS_OK);
+	_lk_ereader.clock_count = 0;
+
+	while (scanning) {
+		u16 row = 0;
+		while (scanning && row < AGB_EREADER_FRAME_LINES) {
+			u16 lines_to_read = AGB_EREADER_FRAME_LINES - row;
+			if (lines_to_read > lines_per_packet) lines_to_read = lines_per_packet;
+			u16 position = AGB_EREADER_PACKET_HEADER_SIZE;
+
+			for (u16 i = 0; i < lines_to_read; i++, row++) {
+				if (expected) {
+					if (_lk_ereader.clock_count + 64 < expected) {
+						lk_agb_ereader_clock_toggle(expected - 64 - _lk_ereader.clock_count);
+					}
+				} else {
+					lk_agb_ereader_clock_toggle(32);
+				}
+				while (!(lk_agb_ereader_read(AGB_EREADER_REG_STATUS) & AGB_EREADER_STATUS_LINE_READY)) {
+					lk_agb_ereader_clock_toggle(32);
+					if (_lk_ereader.clock_count >= 738320) {
+						scanning = false;
+						break;
+					}
+				}
+				if (!scanning) break;
+				_lk_ereader.clock_count = 0;
+				lk_agb_ereader_read_line(data_buffer + position);
+				position += AGB_EREADER_LINE_BYTES;
+				if (row + 1 < AGB_EREADER_FRAME_LINES) lk_agb_ereader_write(AGB_EREADER_REG_STATUS, AGB_EREADER_STATUS_LINE_ACK);
+				expected = 1024;
+			}
+
+			if (!scanning) break;
+
+			bool frame_end = row == AGB_EREADER_FRAME_LINES;
+			if (frame_end) {
+				data_buffer[position++] = lk_agb_ereader_read_statistic(AGB_EREADER_REG_DARK_LEVEL);
+				for (u8 i = 0; i < AGB_EREADER_THRESHOLD_COUNT; i++) {
+					data_buffer[position++] = lk_agb_ereader_read_statistic(AGB_EREADER_REG_MAXIMA + i);
+				}
+				data_buffer[position++] = frame_buffer;
+				data_buffer[position++] = _lk_ereader.brightness;
+				data_buffer[position++] = _lk_ereader.vertical;
+				data_buffer[position++] = _lk_ereader.pwm >> 8;
+				data_buffer[position++] = _lk_ereader.pwm;
+				data_buffer[position++] = threshold_tags[frame_buffer] >> 24;
+				data_buffer[position++] = threshold_tags[frame_buffer] >> 16;
+				data_buffer[position++] = threshold_tags[frame_buffer] >> 8;
+				data_buffer[position++] = threshold_tags[frame_buffer];
+			}
+			data_buffer[0] = position >> 8;
+			data_buffer[1] = position;
+			for (u16 offset = 0; offset < position;) {
+				u16 chunk_len = position - offset;
+				if (chunk_len > CHUNK_MAX_LEN) chunk_len = CHUNK_MAX_LEN;
+				lk_conn_send(data_buffer + offset, chunk_len);
+				offset += chunk_len;
+			}
+
+			u8 reply = lk_conn_recv_u8();
+			if (reply == LK_STATUS_ERROR) {
+				scanning = false;
+				break;
+			}
+			if (!frame_end) {
+				if (reply != LK_STATUS_CHUNK_NEXT) scanning = false;
+				continue;
+			}
+
+			u8 next_buffer = frame_buffer ^ 1;
+			if (reply == 3) {
+				if (threshold_tags[next_buffer] != threshold_tags[frame_buffer]) {
+					lk_agb_ereader_apply_thresholds(thresholds[next_buffer]);
+				}
+			} else if (reply == 4) {
+				lk_conn_recv(data_buffer, AGB_EREADER_SETTINGS_SIZE);
+				u32 tag = lk_conn_recv_u32();
+				for (u8 i = 0; i < AGB_EREADER_THRESHOLD_COUNT; i++) {
+					thresholds[0][i] = data_buffer[AGB_EREADER_SETTINGS_THRESHOLD_OFFSET + i];
+					thresholds[1][i] = data_buffer[AGB_EREADER_SETTINGS_THRESHOLD_OFFSET + i];
+				}
+				threshold_tags[0] = threshold_tags[1] = tag;
+				if (data_buffer[0] != _lk_ereader.brightness) {
+					lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_BRIGHTNESS, data_buffer[0]);
+					_lk_ereader.brightness = data_buffer[0];
+				}
+				if (data_buffer[1] != _lk_ereader.vertical) {
+					lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_VERTICAL_HIGH, 0);
+					lk_agb_ereader_sensor_write(AGB_EREADER_SENSOR_REG_VERTICAL_LOW, data_buffer[1]);
+					_lk_ereader.vertical = data_buffer[1];
+				}
+				u16 pwm = ((u16)data_buffer[2] << 8) | data_buffer[3];
+				lk_agb_ereader_apply_thresholds(data_buffer + AGB_EREADER_SETTINGS_THRESHOLD_OFFSET);
+				if (pwm != _lk_ereader.pwm) {
+					lk_agb_ereader_write(AGB_EREADER_REG_PWM_LOW, (u8)pwm);
+					lk_agb_ereader_write(AGB_EREADER_REG_PWM_HIGH, pwm >> 8);
+					_lk_ereader.pwm = pwm;
+				}
+			} else if (reply == 5) {
+				lk_conn_recv(data_buffer, AGB_EREADER_THRESHOLD_COUNT);
+				u32 tag = lk_conn_recv_u32();
+				bool apply = threshold_tags[next_buffer] != threshold_tags[frame_buffer];
+				for (u8 i = 0; i < AGB_EREADER_THRESHOLD_COUNT; i++) {
+					thresholds[frame_buffer][i] = data_buffer[i];
+				}
+				threshold_tags[frame_buffer] = tag;
+				if (apply) lk_agb_ereader_apply_thresholds(thresholds[next_buffer]);
+			} else {
+				scanning = false;
+				break;
+			}
+
+			frame_buffer = next_buffer;
+			lk_agb_ereader_write(AGB_EREADER_REG_STATUS, AGB_EREADER_STATUS_LINE_ACK);
+		}
+		if (!scanning) break;
+		expected = 251904; // measured value for the expected number of clock cycles
+	}
+
+	lk_agb_ereader_shutdown();
+	lk_conn_send_u8(LK_STATUS_OK);
 }
 
 /****************************************************/
