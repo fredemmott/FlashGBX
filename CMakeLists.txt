@@ -32,4 +32,10 @@ if(MSVC)
 endif()
 
 # components using this, as part of the build
-add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/FlashGBX/LK_Chromatic")
+# use block() so that only targets propagate upwards; policies and variables don't affect other targets
+block()
+  include(cmake/libmgba.cmake)
+endblock()
+block()
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/FlashGBX/LK_Chromatic")
+endblock()
