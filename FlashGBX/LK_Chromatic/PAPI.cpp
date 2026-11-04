@@ -221,18 +221,7 @@ private:
                 if (stop.stop_requested()) {
                     break;
                 }
-                static constexpr uint8_t KeepAlive[] = {
-                    static_cast<uint8_t>(Command::NOP),
-                    0,
-                };
-                static_assert(std::size(KeepAlive) == BytesPerCommand);
-                if (!mc_transport_enqueue_tx(KeepAlive, BytesPerCommand)) {
-                    LogError("Failed to enqueue keep-alive NOP, shutting down worker. Device unplugged?");
-                    break;
-                }
-                if (mc_transport_is_open()) {
-                    mc_maybe_auto_power_off();
-                }
+                on_idle();
                 continue;
             }
             SPAMMY(TraceLoggingThreadActivity<gTL> tla);
@@ -241,6 +230,26 @@ private:
             SPAMMY(TraceLoggingWriteStop(tla, "mc_exec()", TraceLoggingHexInt8(cmd, "cmd")));
         }
         UNSET_THREAD_NAME();
+    }
+
+    static void on_idle() {
+        if (!mc_transport_is_open()) {
+            return;
+        }
+
+        static constexpr uint8_t KeepAlive[] = {
+            static_cast<uint8_t>(Command::NOP),
+            0,
+        };
+
+        static_assert(std::size(KeepAlive) == BytesPerCommand);
+        if (!mc_transport_enqueue_tx(KeepAlive, BytesPerCommand)) {
+            LogError("Failed to enqueue keep-alive NOP; Device unplugged?");
+            mc_usb_close();
+            return;
+        }
+
+        mc_maybe_auto_power_off();
     }
 };
 auto& worker() {
