@@ -523,7 +523,7 @@ class GbxDevice(LK_Device):
     def CanPowerCycleCart(self):
         return self.FW["cart_power_ctrl"]
 
-    def GetSupprtedModes(self):
+    def GetSupportedModes(self):
         return ["DMG"]
 
     def IsSupported3dMemory(self):
