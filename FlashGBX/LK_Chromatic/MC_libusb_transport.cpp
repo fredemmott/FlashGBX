@@ -490,6 +490,10 @@ std::size_t enqueue(
     const size_t count,
     const unsigned int timeout = LibUSBTransfer::DefaultTimeout
 ) {
+    if (!device()) {
+        LogError("enqueue() called without a libusb device");
+        return 0;
+    }
     static constexpr bool IsRX = T == Operation::RX;
     auto& counter = IsRX ? counters().rx_enqueued : counters().tx_enqueued;
     auto& ops = IsRX ? transfers().rx : transfers().tx;
@@ -539,6 +543,11 @@ extern "C" [[nodiscard]] size_t mc_transport_enqueue_rx(uint8_t* const data, con
 }
 
 extern "C" void mc_transport_flush() {
+    if (!device()) {
+        transfers() = {};
+        return;
+    }
+
     if (!transfers().tx.empty()) {
         std::ignore = transfers().tx.back().wait();
         transfers().tx.clear();
