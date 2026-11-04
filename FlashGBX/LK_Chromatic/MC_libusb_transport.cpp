@@ -94,7 +94,9 @@ struct [[nodiscard]] LibUSBTransfer {
 
     ~LibUSBTransfer() {
         if (_transfer) {
-            std::ignore = wait();
+            if (_state == State::Submitted) {
+                std::ignore = wait();
+            }
             libusb_free_transfer(_transfer);
         }
     }
@@ -141,6 +143,7 @@ struct [[nodiscard]] LibUSBTransfer {
         transition<State::Filled, State::Submitted>();
 
         if (const auto ret = libusb_submit_transfer(_transfer); ret != 0) {
+            transition<State::Submitted, State::Complete>();
             return std::unexpected { static_cast<libusb_error>(ret) };
         }
         return {};
