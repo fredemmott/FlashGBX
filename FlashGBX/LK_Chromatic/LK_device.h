@@ -116,7 +116,8 @@ void LK2MC_SET_PIN(uint8_t pin, uint8_t high);
 #define PIN_AUDIO_L()							LK2MC_SET_PIN(PIN_AUDIO, 0)
 #define PIN_CLK_H()							LK2MC_SET_PIN(PIN_CLK, 1)
 #define PIN_CLK_L()							LK2MC_SET_PIN(PIN_CLK, 0)
-#define PIN_CLK_TOGGLE(num, freq_mhz)		{ for (u32 i = 0; i < num; i++) { PIN_CLK_H(); PIN_CLK_L(); } }
+void LK2MC_CLK_TOGGLE(uint32_t count, uint8_t freq_mhz);
+#define PIN_CLK_TOGGLE(num, freq_mhz)		LK2MC_CLK_TOGGLE(num, freq_mhz)
 void LK2MC_SET_ADDR_PIN(uint8_t pin, uint8_t high);
 #define PIN_ADDR_H(pin)						LK2MC_SET_ADDR_PIN(pin, 1)
 #define PIN_ADDR_L(pin)						LK2MC_SET_ADDR_PIN(pin, 0)

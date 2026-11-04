@@ -528,6 +528,32 @@ extern "C" uint8_t LK2MC_CART_PRESENCE_SWITCH_GET() {
     return (value & cmp) == cmp;
 }
 
+extern "C" void LK2MC_CLK_TOGGLE(const uint32_t count, const uint8_t freq_mhz) {
+    if (!freq_mhz) {
+        for (uint32_t i = 0; i < count; ++i) {
+            PIN_CLK_H();
+            PIN_CLK_L();
+        }
+        return;
+    }
+
+    // The time taken for a SET_PINS + DELAY byte to be received
+    // 1 byte command + 1 byte arg for each
+    // 60mhz clock, so 16.6667ns per byte
+    static constexpr auto MinimumTime = uint8_t { 67 };
+
+    // divide by two so a full cycle takes the specified mhz
+    const auto delay_ns = static_cast<uint32_t>(500 / freq_mhz);
+    const auto delay_ticks = (delay_ns < MinimumTime) ? 0 : (3 * (delay_ns - MinimumTime) / 100);
+    auto& cq = CommandQueue::get();
+    for (uint32_t i = 0; i < count; ++i) {
+        PIN_CLK_H();
+        cq.push(Command::Delay, delay_ticks);
+        PIN_CLK_L();
+        cq.push(Command::Delay, delay_ticks);
+    }
+}
+
 extern "C" void LK2MC_SET_PIN(const uint8_t pin, const uint8_t high) {
     const auto push = [high](const Command cmd, const auto mcPin) {
         const auto mask = std::to_underlying(mcPin);
