@@ -285,6 +285,23 @@ class GbxDevice(LK_Device):
 
         return conn_msg
 
+    def UpdateFlashCarts(self, flashcarts):
+        super().UpdateFlashCarts(flashcarts)
+        # These just plain aren't supported on the Chromatic
+        self.SUPPORTED_CARTS['AGB'] = {}
+        # Given that a Chromatic owner is more likely to have ModRetro cartridges, prefer ModRetro cartridges over
+        # other cartridges
+        #
+        # Tested with a Gravitorque DX cartridge, with an IS29GL032-70TLET flash chip.
+        # Without this change, 'insideGadgets 4 MiB (S29GL032M)' is preferred.
+        #
+        # This isn't a flash ID issue: the flash IDs are distinct, but they share a profile as otherwise, their
+        # configuration is different
+        self.SUPPORTED_CARTS['DMG'] = dict(sorted(
+            self.SUPPORTED_CARTS['DMG'].items(),
+            key = lambda it: f"0{it[0]}" if 'ModRetro' in it[0] else f"1{it[0]}"
+        ))
+
     # noinspection PyUnresolvedReferences
     def LoadFirmwareVersion(self):
         if self.DEVICE is None: return False
