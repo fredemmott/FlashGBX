@@ -669,6 +669,16 @@ void lk_loop(u8 command) {
 			break;
 
 		case LK_CMD_FLASH_PROGRAM:
+#if LK_ASYNC
+			for (u16 i = 0; i < _lk_var16[LK_VAR16_TRANSFER_SIZE]; i++) {
+				// We skip writing and verifying 0xFF bytes
+				// because an erase initializes them to 0xFF;
+				//
+				// This means that 0xFF is a safe 'unset' value
+				// as we'll never check for == 0xFF.
+				verify_data_buffer[i] = 0xFF;
+			}
+#endif
 			// note: client must set various variables beforehand
 			{
 				if (_lk_var8[LK_VAR8_FLASH_METHOD] == LK_FLASH_METHOD_UNBUFFERED) {

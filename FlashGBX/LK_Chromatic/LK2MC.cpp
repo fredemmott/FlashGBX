@@ -447,7 +447,6 @@ extern "C" void LK2MC_enqueue_rx(uint8_t* const data, const uint16_t len) {
     if (!(data && len)) {
         return;
     }
-    std::memset(data, 0xA0, len); // arbitrary marker
     CommandQueue::get().flush();
     std::ignore = mc_transport_enqueue_rx(data, len);
 }
