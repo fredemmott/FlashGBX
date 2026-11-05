@@ -22,7 +22,7 @@ $PYTHON -m venv venv
 source venv/bin/activate
 $PYTHON -m pip install --upgrade pip
 $PYTHON -m pip install pyinstaller==6.11.0 Pillow==10.3.0 PySide6==6.7.2 pyserial==3.5 python-dateutil==2.9.0.post0 requests==2.32.3 packaging==25.0
-$PYTHON -m pip install scikit-build-core==1.0.3 cmake==4.3.4 ninja==1.11.1.4 --no-cache-dir
+$PYTHON -m pip install scikit-build-core==1.0.3 cmake==4.3.4 ninja==1.11.1.4 reedsolo==1.7.0 --no-cache-dir
 $PYTHON -m pip install . --no-build-isolation --no-deps
 
 cat > "./FlashGBX.spec" <<'PYINSTALLER_SPEC'
@@ -42,6 +42,7 @@ a = Analysis(
   binaries=[
     ('FlashGBX/res/icon.ico', 'res'),
     ('venv/lib/<PYTHON>/site-packages/FlashGBX/_LK_Chromatic.so', 'FlashGBX'),
+    ('venv/lib/<PYTHON>/site-packages/FlashGBX/libmgba-macos-arm64.dylib', 'FlashGBX'),
   ],
   datas=[],
   hiddenimports=hiddenimports,
