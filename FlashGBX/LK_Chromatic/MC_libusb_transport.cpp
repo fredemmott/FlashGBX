@@ -159,6 +159,10 @@ struct [[nodiscard]] LibUSBTransfer {
         }
         TraceLoggingWrite(gTL, "LibUSBTransfer::wait()/failure",
             TraceLoggingValue(std::to_underlying(_transfer->status), "libusb-status"),
+            TraceLoggingValue(
+                ((_transfer->endpoint & LIBUSB_ENDPOINT_DIR_MASK) == LIBUSB_ENDPOINT_OUT ? "tx" : "rx"),
+                "direction"),
+            TraceLoggingValue(_transfer->length, "length"),
             TraceLoggingValue(_transfer->actual_length, "transferred"));
         return std::unexpected { _transfer->status };
     }
