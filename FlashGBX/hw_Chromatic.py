@@ -297,9 +297,15 @@ class GbxDevice(LK_Device):
         #
         # This isn't a flash ID issue: the flash IDs are distinct, but they share a profile as otherwise, their
         # configuration is different
+        generic = next(iter(self.SUPPORTED_CARTS['DMG'].items()))
         self.SUPPORTED_CARTS['DMG'] = dict(sorted(
             self.SUPPORTED_CARTS['DMG'].items(),
-            key = lambda it: f"0{it[0]}" if 'ModRetro' in it[0] else f"1{it[0]}"
+            key = lambda it: (
+                0 if it[0] == generic[0] else
+                1 if 'ModRetro' in it[0] else
+                2,
+                it[0]
+            )
         ))
 
     # noinspection PyUnresolvedReferences
