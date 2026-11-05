@@ -56,8 +56,8 @@ import site
 }
 
 & "$($py.FullName)" -m pip install Pillow==12.1.0 PySide6==6.10.2 pyserial==3.5 python-dateutil==2.9.0.post0 requests==2.32.5 packaging==26.0 --no-cache-dir
-# LK_Chromatic native components
-& "$($py.FullName)" -m pip install scikit-build-core==1.0.3 cmake==4.3.4 ninja==1.11.1.4 --no-cache-dir
+# Native components
+& "$($py.FullName)" -m pip install scikit-build-core==1.0.3 cmake==4.3.4 ninja==1.11.1.4 reedsolo==1.7.0 --no-cache-dir
 & "$($py.FullName)" -m pip install . --no-build-isolation --no-deps
 
 # Cleanup PySide6 bloat
@@ -87,7 +87,7 @@ Copy-Item -Path ".github\build\Windows\Launcher\*" -Destination . -Force
 nmake -f Makefile.nmake all
 
 ##### 3. Copy files #####
-Move-Item "launcher.exe" "output\FlashGBX.exe" -Force
+Move-Item "launcher-msvc.exe" "output\FlashGBX.exe" -Force
 Copy-Item LICENSE, CHANGES.md, README.md, "Third Party Notices.md" output\
 Copy-Item cache\embedded-python output\Python -Recurse -Exclude "*.cpp","*.hpp","*.c","*.h","*.pdb"
 # We don't need to copy FlashGBX/ as we build the 'FlashGBX' module into embedded-python, as we needed the DLL
@@ -106,10 +106,11 @@ Copy-Item release-scripts/chromatic_cartio.inf output\Drivers\chromatic_cartio
 if ($NoSign) {
     Write-Host "----- SKIPPING SIGNTOOL -----"
 } else {
-    Write-Host "Signing FlashGBX.exe, _LK_Chromatic.dll, and chromatic_cartio.cat"
+    Write-Host "Signing FlashGBX.exe, libmgba-windows-x86_64.dll, _LK_Chromatic.dll, and chromatic_cartio.cat"
     signtool sign /fd sha256 /tr http://ts.ssl.com /td sha256 /a `
         output\FlashGBX.exe `
         output\Python\Lib\site-packages\FlashGBX\_LK_Chromatic.dll `
+        output\Python\Lib\site-packages\FlashGBX\libmgba-windows-x86_64.dll `
         output\Drivers\chromatic_cartio\chromatic_cartio.cat
 }
 
