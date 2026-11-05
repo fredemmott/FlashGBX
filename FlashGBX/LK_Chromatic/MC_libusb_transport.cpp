@@ -162,6 +162,10 @@ struct [[nodiscard]] LibUSBTransfer {
             TraceLoggingValue(_transfer->actual_length, "transferred"));
         return std::unexpected { _transfer->status };
     }
+
+    [[nodiscard]] std::size_t size() const noexcept {
+        return static_cast<std::size_t>(_transfer->length);
+    }
 private:
     enum class State {
         Init,
@@ -547,6 +551,16 @@ extern "C" void mc_transport_flush() {
         transfers() = {};
         return;
     }
+
+    SPAMMY(TraceLoggingWrite(gTL, "mc_transport_flush",
+        TraceLoggingValue(
+        std::ranges::fold_left(transfers().tx, std::size_t {} , [](const size_t acc, const auto& it) {
+            return acc + it.size();
+        }), "tx"),
+        TraceLoggingValue(
+        std::ranges::fold_left(transfers().tx, std::size_t {} , [](const size_t acc, const auto& it) {
+            return acc + it.size();
+        }), "rx")));
 
     if (!transfers().tx.empty()) {
         std::ignore = transfers().tx.back().wait();
