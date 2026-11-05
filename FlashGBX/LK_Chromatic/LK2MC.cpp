@@ -364,7 +364,8 @@ extern "C" void LK2MC_dprint(const char* const data, va_list args) {
         s.remove_suffix(1);
     }
 
-    TraceLoggingWrite(gTL, "dprint-LK", TraceLoggingCountedString(s.data(), s.size(), "message"));
+    const auto prefixed = std::format("[LK] {}", s);
+    mc_on_debug_message(prefixed.data(), prefixed.size());
 }
 
 extern "C" void LK2MC_verify_data(const uint8_t expected) {
